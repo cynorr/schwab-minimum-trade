@@ -87,6 +87,32 @@ Schwab 返回 `SCHWAB_REJECTED` 时，`error.details` 包含 `http_status`，以
 
 账户和订单读取失败时，保留最后成功快照和原更新时间，Health 标记 REST 不可用。`refresh=true` 失败会返回错误。Streaming 断线时行情回退到 REST；重新连接会清理旧 Streaming 报价并恢复 Symbol 集合，不回放历史成交声音。
 
+## 本地前端
+
+前端按 [V1.1 前端规范](frontend-design.md) 实现，位于 `frontend/`，使用 React 19、TypeScript、Vite 和 Tailwind CSS v4。需要 Node.js 22.12+，先启动上述后端，再运行：
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+打开 `http://127.0.0.1:3000`。开发与预览均固定该地址；端口被占用时直接报错。接口直接连接 `http://127.0.0.1:5678/api/v1`，不需要前端配置凭据。
+
+- 输入股票代码后按 Enter 查询；刷新按钮强制刷新行情；点击持仓会带入代码和整股数量。同一标的刷新不会覆盖已编辑的触发价，可点击「重置建议价」恢复。
+- 突破买入、市价买入和市价卖出均先核对，再点击 `Confirm & Send` 发送；成功表示请求已接受，等待券商同步。改止损和撤单直接发送。
+- 页面通过四种命名 SSE 事件同步快照、报价、连接和成交提示，并每 5 秒读取健康状态以识别授权失效和恢复。SSE 自动重连，保留最后快照；前端不播放声音。
+- 写请求超时、断线或返回 `ORDER_RESULT_UNKNOWN` 时常驻显示琥珀色提示，不自动重发。请先在 Schwab 人工核对；「刷新订单」只读取订单，不代表原交易结果已确认。
+- 桌面采用单屏双栏，长列表在卡片内滚动；窄屏纵向排列。右上角可切换浅色/深色模式，仅保存主题偏好，不保存账户或订单数据。
+
+```bash
+npm test       # 模拟接口与 SSE，不连接券商、不提交真实交易
+npm run build # TypeScript 检查与生产构建，产物为 frontend/dist/
+npm run preview # 在固定本地地址预览生产构建
+```
+
+开发服务与生产预览使用相同端口，运行预览前先停止开发服务。
+
 ## LaunchAgent
 
 `com.local.schwab-backend.plist.example` 是模板，未安装。将其中的 `PROJECT_DIR` 全部替换为项目绝对路径，再复制到 `~/Library/LaunchAgents/com.local.schwab-backend.plist`，检查模板中的 Python 和脚本路径。
