@@ -31,6 +31,6 @@ describe('REST write contract', () => {
     const failure = new ApiError('券商拒单', 'SCHWAB_REJECTED', 502, { broker_error: {
       message: 'Invalid stop price', errors: [{ message: 'Price must be positive' }, 'Order rejected'],
     } })
-    expect(errorMessage(failure)).toBe('券商拒单 · Invalid stop price；Price must be positive；Order rejected')
+    expect(errorMessage(failure)).toBe('Schwab rejected the request. · Invalid stop price; Price must be positive; Order rejected')
   })
 })

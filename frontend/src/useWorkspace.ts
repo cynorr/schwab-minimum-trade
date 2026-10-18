@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { API_BASE, api, asApiError, type ApiError, type Health, type QuoteUpdate, type Snapshot } from './api'
+import { API_BASE, api, asApiError, type ApiError, type FillEvent, type Health, type QuoteUpdate, type Snapshot } from './api'
+import { tradingDay } from './portfolio'
 
 export function useWorkspace() {
   const [snapshot, setSnapshot] = useState<Snapshot>({ account: null, positions: [], orders: [], updated_at: null })
@@ -10,7 +11,8 @@ export function useWorkspace() {
   const [ordersError, setOrdersError] = useState<ApiError | null>(null)
   const [loading, setLoading] = useState(true)
   const [quoteUpdate, setQuoteUpdate] = useState<QuoteUpdate | null>(null)
-  const [fill, setFill] = useState<{ symbol: string | null; order_id: string } | null>(null)
+  const [fill, setFill] = useState<FillEvent | null>(null)
+  const [fills, setFills] = useState<FillEvent[]>([])
   const refreshLock = useRef(false)
 
   useEffect(() => {
@@ -75,9 +77,13 @@ export function useWorkspace() {
     })
     source.addEventListener('order_filled', event => {
       try {
-        const next = JSON.parse((event as MessageEvent<string>).data) as { symbol: string | null; order_id: string }
+        const next = JSON.parse((event as MessageEvent<string>).data) as FillEvent
         if (!alive) return
         setFill(next)
+        if (typeof next.occurred_at === 'string' && tradingDay(next.occurred_at) === tradingDay()) {
+          setFills(previous => previous.some(item => item.order_id === next.order_id) ? previous
+            : [...previous.filter(item => tradingDay(item.occurred_at) === tradingDay()), next])
+        }
         clearTimeout(fillTimer)
         fillTimer = setTimeout(() => setFill(null), 5000)
       } catch { /* Fill sounds are handled only by the backend. */ }
@@ -107,5 +113,5 @@ export function useWorkspace() {
     } finally { refreshLock.current = false }
   }
 
-  return { snapshot, health, connection, healthError, positionsError, ordersError, loading, quoteUpdate, fill, refreshOrders }
+  return { snapshot, health, connection, healthError, positionsError, ordersError, loading, quoteUpdate, fill, fills, refreshOrders }
 }

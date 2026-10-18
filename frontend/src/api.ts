@@ -7,6 +7,7 @@ export interface Account {
   day_trading_buying_power: Decimal
   long_market_value: Decimal
   margin_balance: Decimal
+  available_funds?: Decimal
   updated_at: string | null
 }
 
@@ -50,6 +51,11 @@ export interface Quote {
 }
 
 export type QuoteUpdate = Pick<Quote, 'symbol' | 'bid' | 'ask' | 'updated_at'>
+export interface FillEvent {
+  symbol: string | null
+  order_id: string
+  occurred_at: string
+}
 export interface Snapshot {
   account: Account | null
   positions: Position[]
@@ -95,22 +101,37 @@ export class ApiError extends Error {
 // Broker errors may be strings, arrays, or structured ServiceError objects.
 function brokerText(value: unknown): string {
   if (typeof value === 'string') return value
-  if (Array.isArray(value)) return value.map(brokerText).filter(Boolean).join('；')
+  if (Array.isArray(value)) return value.map(brokerText).filter(Boolean).join('; ')
   if (value && typeof value === 'object') {
     const object = value as Record<string, unknown>
-    return [object.message, object.errors].map(brokerText).filter(Boolean).join('；')
+    return [object.message, object.errors].map(brokerText).filter(Boolean).join('; ')
   }
   return ''
 }
 
 export function asApiError(error: unknown): ApiError {
-  return error instanceof ApiError ? error : new ApiError('请求失败，请稍后重试')
+  return error instanceof ApiError ? error : new ApiError('Request failed. Please try again.')
+}
+
+const ERROR_LABELS: Record<string, string> = {
+  AUTH_REQUIRED: 'Schwab authorization required. Run the backend auth command.',
+  SCHWAB_UNAVAILABLE: 'Schwab is temporarily unavailable.',
+  SCHWAB_REJECTED: 'Schwab rejected the request.',
+  ORDER_CONFLICT: 'Order conflict. Check the current order and try again.',
+  RISK_LIMIT_EXCEEDED: 'Order exceeds a backend risk limit.',
+  VALIDATION_FAILED: 'Invalid order parameters.',
+  ORDER_RESULT_UNKNOWN: 'Order result unknown. Check Schwab before submitting again.',
+  NETWORK_ERROR: 'Cannot connect to the local backend.',
+  NOT_FOUND: 'The requested symbol or order was not found.',
+  BAD_REQUEST: 'The backend could not accept this request.',
 }
 
 export function errorMessage(error: ApiError): string {
   const details = error.details as { broker_error?: unknown } | undefined
   const broker = brokerText(details?.broker_error)
-  return broker ? `${error.message} · ${broker}` : error.message
+  const english = /[\u3400-\u9fff]/.test(error.message)
+    ? ERROR_LABELS[error.code] ?? 'Request failed. Check the order in Schwab.' : error.message
+  return broker && !/[\u3400-\u9fff]/.test(broker) ? `${english} · ${broker}` : english
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -127,7 +148,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     if (!response.ok) {
       const failure = body as ErrorBody | null
       throw new ApiError(
-        failure?.error?.message ?? `请求失败（HTTP ${response.status}）`,
+        failure?.error?.message ?? `Request failed (HTTP ${response.status}).`,
         failure?.error?.code ?? 'REQUEST_FAILED',
         response.status,
         failure?.error?.details,
@@ -136,7 +157,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     if (body === null) {
       throw new ApiError(
-        writing ? '订单响应无法确认，请人工核对' : '服务返回了无法解析的数据',
+        writing ? 'Order response unknown. Check Schwab.' : 'Invalid response from the backend.',
         writing ? 'ORDER_RESULT_UNKNOWN' : 'INVALID_RESPONSE',
       )
     }
@@ -146,7 +167,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // A disconnected browser cannot know whether a write reached the broker.
     // Never retry writes, including requests interrupted by a timeout or sleep.
     throw new ApiError(
-      writing ? '订单结果未确认，请人工核对后再操作' : '无法连接本地服务，请确认后端已启动',
+      writing ? 'Order result unknown. Check Schwab before submitting again.' : 'Cannot connect to the local backend.',
       writing ? 'ORDER_RESULT_UNKNOWN' : 'NETWORK_ERROR',
     )
   } finally {
