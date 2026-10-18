@@ -628,6 +628,27 @@ def map_order(raw: dict, parent_id: str | None = None) -> dict:
     legs = raw.get("orderLegCollection", [])
     leg = legs[0] if legs else {}
     order_id = str(raw["orderId"]) if raw.get("orderId") is not None else None
+    executions = []
+    if leg.get("instrument", {}).get("assetType") == "EQUITY":
+        for activity in raw.get("orderActivityCollection", []):
+            if (
+                activity.get("activityType") != "EXECUTION"
+                or activity.get("executionType") != "FILL"
+            ):
+                continue
+            for execution in activity.get("executionLegs", []):
+                executions.append(
+                    {
+                        "activity_id": str(activity["activityId"]),
+                        "leg_id": str(execution["legId"]),
+                        "quantity": decimal_text(execution["quantity"]),
+                        "price": decimal_text(execution["price"]),
+                        "time": datetime.fromisoformat(execution["time"])
+                        .astimezone(UTC)
+                        .isoformat()
+                        .replace("+00:00", "Z"),
+                    }
+                )
     return {
         "order_id": order_id,
         "parent_order_id": parent_id,
@@ -643,6 +664,7 @@ def map_order(raw: dict, parent_id: str | None = None) -> dict:
         "status": raw.get("status"),
         "cancelable": raw.get("cancelable"),
         "entered_at": raw.get("enteredTime"),
+        "executions": executions,
         "child_orders": [
             map_order(child, order_id) for child in raw.get("childOrderStrategies", [])
         ],

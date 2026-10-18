@@ -77,13 +77,13 @@ describe('compact trading workspace', () => {
   it('prioritizes High/Low, uses Low as the range denominator, and never substitutes buying power for Available', async () => {
     await ready(); await selectNvda()
     expect(screen.getByText('3.16%')).toBeTruthy()
-    const available = screen.getByText('Available Funds').parentElement!
-    expect(available.textContent).toBe('Available Funds—')
+    const available = screen.getByText('Available Dollars').parentElement!
+    expect(available.textContent).toBe('Available Dollars—')
     expect(screen.queryByText('$54,000.00')).toBe(null)
     expect(document.body.textContent).not.toMatch(/[\u3400-\u9fff]/)
   })
 
-  it('shows native account balances with neutral signs and separate intraday and stock buying power', async () => {
+  it('orders the neutral balance strip and places native Long Value last in Holdings', async () => {
     await ready()
     source().emit('snapshot_updated', {
       account: { ...account, available_funds: '25000.25', cash_balance: '0.0',
@@ -93,10 +93,11 @@ describe('compact trading workspace', () => {
     })
     const balances = screen.getByRole('region', { name: 'Account balances' })
     expect(balances.className).toBe('account-strip')
+    expect(Array.from(balances.querySelectorAll('.account-metric > span'), node => node.textContent))
+      .toEqual(['Net Liq', 'Stock BP', 'Intraday BP', 'Available Dollars', 'Balance'])
     for (const [label, value, sourcePath] of [
-      ['Available Funds', '$25,000.25', 'currentBalances.availableFunds'],
-      ['Cash Balance', '$0.00', 'currentBalances.cashBalance'],
-      ['Margin Balance', '-$5,000.75', 'currentBalances.marginBalance'],
+      ['Available Dollars', '$25,000.25', 'currentBalances.availableFunds'],
+      ['Balance', '-$5,000.75', 'currentBalances.cashBalance $0.00 + currentBalances.marginBalance -$5,000.75'],
       ['Intraday BP', '$120,000.50', 'currentBalances.intradayBuyingPowerAmount'],
       ['Stock BP', '$65,000.50', 'projectedBalances.stockBuyingPower'],
     ]) {
@@ -107,6 +108,28 @@ describe('compact trading workspace', () => {
     }
     expect(balances.textContent).not.toMatch(/Margin Loan|Cash & Sweep|\(|\)/)
     expect(within(balances).queryByText('$75,000.00')).toBe(null)
+    expect(within(balances).queryByText('Long Value')).toBe(null)
+    const holdings = screen.getByRole('region', { name: 'Holdings' })
+    const total = holdings.lastElementChild!
+    expect(total.getAttribute('aria-label')).toBe('Holdings total')
+    expect(total.textContent).toBe('Long Value$86,000.00')
+    expect(total.getAttribute('title')).toBe('currentBalances.longMarketValue')
+    expect(writes).toHaveLength(0)
+  })
+
+  it.each([
+    ['1250.25', '0.0', '$1,250.25'],
+    ['200.25', '-500.75', '-$300.50'],
+    ['0.0', '0.0', '$0.00'],
+    [null, '-500.75', '—'],
+    ['200.25', null, '—'],
+  ])('combines cash %s and margin %s without assuming missing balances are zero', async (cash, margin, expected) => {
+    await ready()
+    source().emit('snapshot_updated', {
+      account: { ...account, cash_balance: cash, margin_balance: margin },
+      positions: [position], orders, updated_at: now,
+    })
+    expect(screen.getByText('Balance').parentElement!.textContent).toBe('Balance' + expected)
     expect(writes).toHaveLength(0)
   })
 
@@ -221,20 +244,26 @@ describe('compact trading workspace', () => {
     expect(writes[1].init.body).toBeUndefined()
   })
 
-  it('does not infer a closure from order creation dates; requires a received sell fill and a flat position', async () => {
-    await ready()
-    const sold = order({ status: 'FILLED', filled_quantity: '100', cancelable: false })
-    source().emit('snapshot_updated', { account, positions: [], orders: [sold], updated_at: now })
-    expect(screen.queryByRole('button', { name: 'Select NVDA' })).toBe(null)
+  it('restores Sold Today without fill events and keeps sales visible alongside remaining or repurchased holdings', async () => {
     const filledAt = new Date().toISOString()
-    source().emit('order_filled', { symbol: 'NVDA', order_id: '102', occurred_at: filledAt })
-    expect(within(screen.getByRole('region', { name: 'Closed today' })).queryByRole('button', { name: 'Select NVDA' })).toBe(null)
-    source().emit('snapshot_updated', { account: { ...account, updated_at: filledAt }, positions: [], orders: [sold], updated_at: filledAt })
-    expect(within(screen.getByRole('region', { name: 'Closed today' })).getByRole('button', { name: 'Select NVDA' })).toBeTruthy()
-    expect(screen.getByText('Sold 100')).toBeTruthy()
-    source().emit('snapshot_updated', { account, positions: [position], orders: [sold], updated_at: now })
-    expect(within(screen.getByRole('region', { name: 'Closed today' })).queryByRole('button', { name: 'Select NVDA' })).toBe(null)
+    const sold = order({ order_id: '999', status: 'FILLED', filled_quantity: '30', cancelable: false,
+      executions: [{ activity_id: '25', leg_id: '1', quantity: '30', price: '140.20', time: filledAt }] })
+    orders = [...orders, sold]
+    await ready()
+    const sales = () => within(screen.getByRole('region', { name: 'Sold Today' }))
+    expect(sales().getByText('$4,206.00')).toBeTruthy()
+    fireEvent.click(sales().getByLabelText('NVDA sell executions'))
+    expect(sales().getByText('Order #999 · Activity #25 · Leg 1')).toBeTruthy()
+    source().emit('order_filled', { symbol: 'NVDA', order_id: '999', occurred_at: filledAt })
+    source().emit('snapshot_updated', { account, positions: [], orders: [sold], updated_at: filledAt })
+    expect(sales().getAllByText('$4,206.00')).toHaveLength(1)
+    source().emit('snapshot_updated', { account, positions: [position], orders: [sold], updated_at: filledAt })
+    expect(sales().getByText('$4,206.00')).toBeTruthy()
     expect(within(screen.getByRole('region', { name: 'Holdings' })).getByRole('button', { name: 'Select NVDA' })).toBeTruthy()
+    cleanup()
+    await ready()
+    expect(sales().getByText('$4,206.00')).toBeTruthy()
+    expect(writes).toEqual([])
   })
 
   it('does not turn missing High/Low into zero prices or enable an uninitialized price ruler', async () => {

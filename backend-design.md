@@ -1234,6 +1234,7 @@ Response：
       "status": "AWAITING_STOP_CONDITION",
       "cancelable": true,
       "entered_at": "2026-10-15T14:20:00Z",
+      "executions": [],
       "child_orders": [
         {
           "order_id": null,
@@ -1250,6 +1251,7 @@ Response：
           "status": "AWAITING_PARENT_ORDER",
           "cancelable": false,
           "entered_at": null,
+          "executions": [],
           "child_orders": []
         }
       ]
@@ -1264,6 +1266,28 @@ Response：
 `cancelable` 在没有可靠返回值时允许 `null`。
 
 保留 Schwab 原始订单状态及父子关系。
+
+#### 逐笔成交与 Sold Today
+
+每个订单包含 `executions` 数组，从股票订单的 `orderActivityCollection` 中提取 `activityType=EXECUTION`、`executionType=FILL` 的全部 `executionLegs`。未成交时返回 `[]`，父子订单分别保留各自的成交明细。
+
+```json
+{
+  "activity_id": "11",
+  "leg_id": "1",
+  "quantity": "30.0",
+  "price": "140.25",
+  "time": "2026-10-16T13:56:38Z"
+}
+```
+
+`activity_id` 和 `leg_id` 来自券商并转为字符串，所属订单 ID 为外层 `order_id`。数量、价格为十进制字符串，时间转为 UTC ISO 8601。保留数量、价格和时间相同的独立成交，不以该三元组去重；活动 ID 和腿 ID 不被当作全局唯一成交 ID。
+
+前端 Sold Today 使用同一订单快照：递归包含子单，以订单 ID 去除重复出现的订单，只选 `SELL` 且 `FILLED` 的股票订单。最后一笔实际成交时间落在 `America/New_York` 当天时，整笔订单计入当天；数量取 `filled_quantity`，成交总额为逐笔数量乘价格之和，均价为总额除股数。按股票汇总，展开保留逐笔明细；总额未扣费用，不计算已实现盈亏。未提供成交明细时不以委托时间、报价或止损价推测成交。
+
+范围按用户交易习惯限定：订单几秒内全部成交，不处理跨日分批成交或部分成交后撤单；止损单最多两周更新一次，位于现有 59 天查询窗口内。卖出部分持仓后剩余持仓仍在 Holdings，当天买回也不隐藏 Sold Today。
+
+不新增 `/api/v1/closed-trades` 或其他 Endpoint，不调用 transactions，不增加轮询、数据库或对账状态；后端仅规范化成交明细，前端从首次 GET 和后续 SSE 完整快照恢复当日记录。`order_filled` 仅用于短暂提示，不承担历史恢复。
 
 ### 17.4 单个订单
 

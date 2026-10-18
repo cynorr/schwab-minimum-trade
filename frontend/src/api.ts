@@ -24,6 +24,14 @@ export interface Position {
   day_profit_loss_percent: Decimal
 }
 
+export interface Execution {
+  activity_id: string
+  leg_id: string
+  quantity: Decimal
+  price: Decimal
+  time: string
+}
+
 export interface OrderItem {
   order_id: string | null
   parent_order_id: string | null
@@ -39,6 +47,7 @@ export interface OrderItem {
   status: string | null
   cancelable: boolean | null
   entered_at: string | null
+  executions: Execution[]
   child_orders: OrderItem[]
 }
 

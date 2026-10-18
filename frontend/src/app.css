@@ -29,7 +29,7 @@ a { text-decoration: none; color: inherit; }
 .icon-button:hover:not(:disabled), .mini-button:hover:not(:disabled) { background: var(--hover); color: var(--text); }
 .is-loading svg { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.account-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); padding: 10px 14px; border: 1px solid var(--line); border-radius: 17px; background: var(--card); flex-shrink: 0; }
+.account-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 10px 14px; border: 1px solid var(--line); border-radius: 17px; background: var(--card); flex-shrink: 0; }
 .account-metric { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 0 12px; border-right: 1px solid var(--line); }
 .account-metric:first-child { padding-left: 0; }
 .account-metric:last-child { padding-right: 0; border: 0; }
@@ -118,7 +118,6 @@ button.ruler-meta { color: var(--secondary); }
 .list-section-heading { display: flex; align-items: center; justify-content: space-between; min-height: 24px; padding: 0 5px; margin-top: 2px; font-size: 10px; font-weight: 550; }
 .list-section-heading b { font-weight: 450; margin-left: 4px; color: var(--muted); }
 .list-section-heading > span:last-child { font-size: 9px; font-weight: 400; color: var(--muted); }
-.session-scope { cursor: help; }
 .portfolio-row, .holding-columns { display: grid; align-items: center; column-gap: 6px; min-height: 32px; padding: 0 5px; border-radius: 8px; font-size: 11px; white-space: nowrap; }
 .holding-row, .holding-columns { grid-template-columns: 70px 42px 70px 80px minmax(64px, 1fr) 112px 52px; min-width: 540px; }
 .portfolio-row { border-top: 1px solid var(--line); }
@@ -150,17 +149,23 @@ button.ruler-meta { color: var(--secondary); }
 .entry-target { overflow: hidden; text-align: right; }
 .entry-target select { width: 88px; height: 23px; background: var(--surface); border: 0; color: var(--secondary); font-size: 10px; padding: 0 5px; }
 .inline-state { font-size: 9px; color: var(--muted); }
-.closed-row { grid-template-columns: 70px minmax(90px, 1fr) 70px 55px; min-width: 330px; color: var(--secondary); }
-.closed-row > span:nth-last-child(2), .closed-row > span:last-child { text-align: right; }
+.sold-row, .sold-columns { display: grid; grid-template-columns: 80px 50px minmax(80px, 1fr) minmax(95px, 1fr) 75px; align-items: center; column-gap: 6px; min-width: 420px; }
+.sold-row { cursor: pointer; list-style: none; }
+.sold-row::-webkit-details-marker { display: none; }
+.sold-row > span:not(:first-child), .sold-columns > span:not(:first-child) { text-align: right; }
+.sold-columns { padding: 2px 5px; color: var(--muted); font-size: 9px; }
+.sold-details { padding: 4px 12px 8px; color: var(--secondary); background: var(--surface); border-radius: 8px; }
+.execution-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; padding: 4px 0; font-size: 10px; }
 .empty-row { padding: 4px 5px 8px; color: var(--muted); font-size: 10px; }
+.holdings-total { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 5px; padding: 9px 5px; border-top: 1px solid var(--line); color: var(--text); }
+.holdings-total > span { color: var(--secondary); font-size: 10px; }
+.holdings-total > strong { font-size: 12px; font-weight: 600; white-space: nowrap; }
 .workspace-feedback { display: flex; gap: 5px; align-items: center; font-size: 10px; color: var(--green); flex-shrink: 0; min-height: 16px; }
 @media (min-width: 1100px) { .app-shell { padding-top: 22px; padding-bottom: 22px; } }
-@media (max-width: 780px) {
-  .account-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 12px; }
-  .account-metric:nth-child(4) { border-right: 0; padding-right: 0; }
-  .account-metric:nth-child(5) { padding-left: 0; }
-}
 @media (max-width: 620px) {
+  .account-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 12px; }
+  .account-metric:nth-child(3) { border-right: 0; padding-right: 0; }
+  .account-metric:nth-child(4) { padding-left: 0; }
   .app-shell { padding: 10px; gap: 8px; } .account-strip { padding: 9px 11px; } .account-metric { padding: 0 8px; } .account-metric > span { font-size: 9px; } .account-metric strong { font-size: 12px; }
   .trade-panel { padding: 10px 11px; } .quotes { gap: 14px; } .high-low { gap: 20px; } .high-low > div { gap: 5px; } .high-low strong { font-size: 20px; } .range-quote { flex-direction: column; gap: 2px; }
   .symbol-form { flex: 1; width: 120px; } .segmented-control button { padding: 0 9px; }

@@ -17,36 +17,28 @@
 ### 1.2 克制提示与行内确认原则
 - **零弹窗（No Modals / No Toasts）**：全站不使用任何浮层弹窗或右上角 Toast 通知；成交提示音由后端 `afplay` 统一播放，前端不发声。
 - **主交易采用行内两步确认（Inline Review）**：在左侧交易面板发起 `Breakout Buy`、`Market Buy`、`Market Sell` 时，点击底部胶囊按钮先在原卡片内展开参数核对视图，再点击 `[ Confirm & Send ]` 正式发送；收到 `201 Accepted` 后卡片自动退回普通编辑态作为完成反馈。
-- **改止损与撤单保持一键直发**：右侧订单列表中的 `PUT /orders/{id}/stop`（改价）和 `DELETE /orders/{id}`（撤单）点击即发，不设二次确认。
+- **改止损与撤单保持一键直发**：统一列表中的 `PUT /orders/{id}/stop`（改价）和 `DELETE /orders/{id}`（撤单）点击即发，不设二次确认。
 
 ---
 
 ## 2. 单屏布局结构（Bento Grid）
 
-整个应用仅一个单屏页面，分为 **顶部状态胶囊栏** 与 **左右双栏卡片区**：
+整个应用为单屏工作台：顶部状态与余额，中央固定交易区，下方统一列表在卡片内滚动。适配 640–800px 半屏窗口。
 
 ```text
-+-----------------------------------------------------------------------------------+
-|  (● Online · 14:30:05)   Net Liq $125,000   Buying Power $54,000   Margin $15,000 |
-+-----------------------------------+-----------------------------------------------+
-|  交易面板卡片 (Trade Ticket)      |  持仓卡片 (Positions)                         |
-|                                   |  +-----------------------------------------+  |
-|  [ NVDA          ]  ( 刷新 ↻ )    |  | NVDA   100股   均价 135.00   +$210 (+1%)|  |
-|                                   |  +-----------------------------------------+  |
-|  ( Bid 140.20      Ask 140.22 )   |                                               |
-|    Low 136.20      High 140.50    |-----------------------------------------------|
-|                                   |  活动订单卡片 (Orders)                        |
-|  ( (● 突破单 Breakout)  市价单 )  |  +-----------------------------------------+  |
-|                                   |  | BUY STOP 100 NVDA @ 140.50    ( 撤单 )  |  |
-|  数量 Qty      [       100     ]  |  |  └─ SELL STOP 100 @ 136.20 GTC          |  |
-|  Buy Stop      [    140.51     ]  |  +-----------------------------------------+  |
-|  Sell Stop     [    136.20     ]  |  | SELL STOP 100 AAPL @ 220.00             |  |
-|                                   |  |  [ 222.50 ] ( 改价 )          ( 撤单 )  |  |
-|  (        Review Order         )  |  +-----------------------------------------+  |
-+-----------------------------------+-----------------------------------------------+
+连接状态 · 更新时间
+Net Liq | Stock BP | Intraday BP | Available Dollars | Balance
+┌─────────────────────────────────────────────────────────┐
+│ Trade Ticket：Symbol / Quote / Qty / Buy / Stop / Review │
+└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│ Entries：待成交买单与关联止损                            │
+│ Holdings：持仓与行内止损操作，末行 Long Value 汇总        │
+│ Sold Today：当日卖出汇总，可展开逐笔成交                  │
+└─────────────────────────────────────────────────────────┘
+```
 
-
-3. 四大核心模块设计
+3. 核心模块设计
 
 3.1 顶部悬浮胶囊栏（Status & Account Pill）
 
@@ -57,9 +49,9 @@
     ⚬ SSE 重连中：● Reconnecting · Last 14:30:05（橙点）
     ⚬ 需重新授权：● Auth Required（红点，auth_status === "auth_required"）
 2. 核心资金指标（右侧水平排列）：
-  ⚬ 直接展示 /api/v1/account 返回的 liquidation_value、available_funds、cash_balance、margin_balance、intraday_buying_power、stock_buying_power、long_market_value。余额使用中性色和负号，不添加风险色或借款状态推断；悬停显示原始 API 字段路径。窄窗口分行展示。
+  ⚬ 顶部依次为 Net Liq、Stock BP、Intraday BP、Available Dollars、Balance；分别使用 liquidation_value、stock_buying_power、intraday_buying_power、available_funds，以及 cash_balance + margin_balance。Balance 悬停显示两个原值，任一缺失时显示 —。余额使用中性色和负号，不添加风险色或计息状态推断；窄窗口分行展示。Long Value 使用原生 long_market_value，移至 Holdings 的最后一行汇总。
 
-3.2 左栏：交易面板卡片（Trade Ticket Card）
+3.2 固定交易区：交易面板卡片（Trade Ticket Card）
 
 A. 标的查询与实时报价胶囊（按需触发）
 
@@ -84,33 +76,17 @@ B. 交易模式与行内确认（Inline Review）
   ⚬ 底部并排两个胶囊按钮：[ 返回修改 ]（灰底）与 [ Confirm & Send ]（主色实心）。
   ⚬ 点击 [ Confirm & Send ] 发起 POST 请求；成功后卡片自动切回编辑态并清空 Qty。
 
-3.3 右栏上：持仓卡片（Positions Card）
+3.3 下方统一列表（Entries / Holdings / Sold Today）
 
-⚬ 列表展示 positions：symbol、quantity、average_price、market_value、day_profit_loss 及红绿胶囊标签 day_profit_loss_percent。
-⚬ 点击任意持仓行，自动将该 symbol 和整股 quantity 填入左侧交易面板并触发一次该 Symbol 的 Quote 查询。
+Entries 和 Holdings 每个股票一行，持仓优先；同一股票的多个买单、止损单通过行内选择器切换，操作仍绑定真实订单 ID。父单已成交时继续递归提取活动子单，不显示置灰父单占位。Holdings 最后一行汇总直接展示 `long_market_value`，点击股票带入整股持仓数量并查询报价。
 
-3.4 右栏下：活动订单卡片（Orders Card）
+Sold Today 是独立区域，不受持仓是否归零或重新买入影响。递归解析完整订单快照，只统计股票 SELL 且 FILLED 的订单，以最后一笔实际成交时间判断 `America/New_York` 当天。每个股票展示卖出股数、实际成交加权均价、未扣费用总额和最后成交时间（ET）；点击行展开逐笔数量、价格、时间、订单 ID、活动 ID、腿 ID。不展示已实现盈亏。
 
-A. 订单树递归过滤规则
+成交明细来自现有 GET Orders 和 SSE 快照内的 `executions` 数组；重载及断线恢复不依赖实时成交提示事件。保留相同数量/价格/时间的不同成交，仅按订单 ID 去除订单树中重复出现的订单。无明细不猜测成交价或成交时间。
 
-后端返回的是保留父子层级的订单树。为防止“父单已 FILLED、但子单 SELL STOP 仍在 WORKING 时整棵树被过滤掉”，前端采用递归可见性判断：
+约定每单几秒内全部成交，不处理跨日分批成交和部分成交后撤单；止损单最多两周更新一次，在现有 59 天查询窗口内。前端不增加 `/closed-trades` 接口调用、transactions 查询或轮询任务。
 
-const ACTIVE_STATUSES = new Set([
-  "WORKING",
-  "AWAITING_STOP_CONDITION",
-  "AWAITING_PARENT_ORDER",
-  "PENDING_ACTIVATION",
-  "QUEUED",
-  "PENDING_REPLACE",
-  "PARTIALLY_FILLED",
-  "ACCEPTED",
-]);
-
-const isOrderTreeVisible = (order: OrderItem): boolean =>
-  ACTIVE_STATUSES.has(order.status) || order.child_orders.some(isOrderTreeVisible);
-
-
-若父单已 FILLED 而子单处于活动状态，父单作为置灰标题行展示（标注 FILLED），子单正常高亮展示并暴露操作控件。
+3.4 行内订单操作
 
 B. 精确的改价与撤单按钮渲染条件
 
@@ -170,5 +146,5 @@ frontend/
 ├── vite.config.ts    # 固定 server: { host: '127.0.0.1', port: 3000 }
 └── src/
     ├── api.ts        # 类型契约与 REST 请求封装
-    ├── App.tsx       # 顶部胶囊栏 + 左交易卡(含Inline Review) + 右持仓/订单树卡
+    ├── App.tsx       # 顶部胶囊栏 + 左交易卡(含Inline Review) + 下方 Entries/Holdings/Sold Today 列表
     └── app.css       # Tailwind 引入与 tabular-nums 字体规则

@@ -1301,3 +1301,45 @@ async def test_new_port_and_origins(api):
     assert response.status_code == 201
     assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5678"
     assert len(broker.writes()) == 1
+
+
+async def test_execution_details_in_order_reads_and_snapshot(api):
+    client, runtime, broker = api
+    execution = {
+        "legId": 1,
+        "quantity": 5.0,
+        "price": 140.25,
+        "time": "2026-10-16T13:56:38+0000",
+    }
+    child = raw_order(
+        124,
+        status="FILLED",
+        filledQuantity=10,
+        orderActivityCollection=[
+            {
+                "activityId": activity_id,
+                "activityType": "EXECUTION",
+                "executionType": "FILL",
+                "executionLegs": [execution],
+            }
+            for activity_id in (11, 12)
+        ],
+    )
+    broker.order_list = [raw_order(childOrderStrategies=[child])]
+    await runtime.refresh("orders")
+    expected = [
+        {
+            "activity_id": str(activity_id),
+            "leg_id": "1",
+            "quantity": "5.0",
+            "price": "140.25",
+            "time": "2026-10-16T13:56:38Z",
+        }
+        for activity_id in (11, 12)
+    ]
+    orders = (await client.get("/api/v1/orders")).json()["orders"]
+    assert orders[0]["executions"] == []
+    assert orders[0]["child_orders"][0]["executions"] == expected
+    assert runtime.snapshot()["orders"] == orders
+    single = (await client.get("/api/v1/orders/123")).json()
+    assert single["child_orders"][0]["executions"] == expected

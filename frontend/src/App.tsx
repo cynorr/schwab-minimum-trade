@@ -3,7 +3,7 @@ import { ApiError, api, asApiError, errorMessage, type Quote, type Ticket } from
 import { Icon } from './Icons'
 import { money, number, price, quantity, time, validPrice } from './format'
 import { activeStops } from './orders'
-import { observedClosures, type SymbolRow } from './portfolio'
+import { soldToday, type SymbolRow } from './portfolio'
 import { BUY_LIMIT, priceTick, quantityUnit, ticketIssue, type QuantityUnit } from './trading'
 import { Ruler } from './Ruler'
 import { UnifiedList } from './UnifiedList'
@@ -22,7 +22,7 @@ function ErrorLine({ error, onRefresh }: { error: ApiError | null; onRefresh?: (
 }
 
 export default function App() {
-  const { snapshot, health, connection, healthError, positionsError, ordersError, loading, quoteUpdate, fill, fills, refreshOrders } = useWorkspace()
+  const { snapshot, health, connection, healthError, positionsError, ordersError, loading, quoteUpdate, fill, refreshOrders } = useWorkspace()
   const [dark, setDark] = useState(() => { try { return localStorage.getItem('schwab-theme') === 'dark' } catch { return false } })
   const [symbolInput, setSymbolInput] = useState('')
   const [symbol, setSymbol] = useState('')
@@ -83,8 +83,7 @@ export default function App() {
   const risk = mode === 'breakout' && number(buyStop) !== null && number(sellStop) !== null && number(qty) !== null ? (Number(buyStop) - Number(sellStop)) * Number(qty) : null
   const reviewNominal = review ? review.qty * (review.mode === 'breakout' ? Number(review.buy_stop) : referencePrice ?? NaN) : null
   const reviewRisk = review?.mode === 'breakout' ? review.qty * (Number(review.buy_stop) - Number(review.sell_stop)) : null
-  const closureRecords = observedClosures(snapshot.orders, fills).filter(record =>
-    Date.parse(snapshot.account?.updated_at ?? '') >= Date.parse(record.occurredAt))
+  const soldRecords = soldToday(snapshot.orders)
   let status = { label: 'Online', tone: 'green' }
   if (authRequired) status = { label: 'Auth required', tone: 'red' }
   else if (connection === 'reconnecting' || healthError) status = { label: 'Reconnecting', tone: 'amber' }
@@ -163,17 +162,19 @@ export default function App() {
     try { await refreshOrders() } finally { setOrdersRefreshing(false) }
   }
 
+  const cashBalance = number(snapshot.account?.cash_balance)
+  const marginBalance = number(snapshot.account?.margin_balance)
+  const balance = cashBalance !== null && marginBalance !== null ? cashBalance + marginBalance : null
+
   return <div className="app-shell">
     <header className="app-header"><a className="brand" href="/" aria-label="Schwab Local home"><span className="brand-mark"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 18v-6m7 6V7m7 11V3" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" /></svg></span><span>Schwab <span className="brand-local">Local</span></span></a><div className="header-status"><span className={`connection-pill ${status.tone}`} role="status"><span className="status-dot" />{status.label}</span><time title="Last snapshot">{time(snapshot.account ? snapshot.updated_at : null)}</time><button className="icon-button" aria-label={dark ? 'Use light theme' : 'Use dark theme'} onClick={() => setDark(previous => !previous)}><Icon name={dark ? 'sun' : 'moon'} size={14} /></button></div></header>
-    <section className="account-strip" aria-label="Account balances">{[
+    <section className="account-strip" aria-label="Account balances">{([
       ['Net Liq', snapshot.account?.liquidation_value, 'currentBalances.liquidationValue'],
-      ['Available Funds', snapshot.account?.available_funds, 'currentBalances.availableFunds'],
-      ['Cash Balance', snapshot.account?.cash_balance, 'currentBalances.cashBalance'],
-      ['Margin Balance', snapshot.account?.margin_balance, 'currentBalances.marginBalance'],
-      ['Intraday BP', snapshot.account?.intraday_buying_power, 'currentBalances.intradayBuyingPowerAmount'],
       ['Stock BP', snapshot.account?.stock_buying_power, 'projectedBalances.stockBuyingPower'],
-      ['Long Value', snapshot.account?.long_market_value, 'currentBalances.longMarketValue'],
-    ].map(([label, value, source]) => <div className="account-metric" key={label} title={source ?? undefined}><span>{label}</span><strong>{money(value)}</strong></div>)}</section>
+      ['Intraday BP', snapshot.account?.intraday_buying_power, 'currentBalances.intradayBuyingPowerAmount'],
+      ['Available Dollars', snapshot.account?.available_funds, 'currentBalances.availableFunds'],
+      ['Balance', balance, `currentBalances.cashBalance ${money(snapshot.account?.cash_balance)} + currentBalances.marginBalance ${money(snapshot.account?.margin_balance)}`],
+    ] as const).map(([label, value, source]) => <div className="account-metric" key={label} title={source}><span>{label}</span><strong>{money(value)}</strong></div>)}</section>
     {(authRequired || healthError || (health && health.schwab_rest !== 'connected')) && <div className="service-note" role="status"><Icon name="alert" size={13} />{authRequired ? 'Authorization required: run .venv/bin/python schwab_backend.py auth' : healthError ? 'Local backend disconnected. Reconnecting…' : 'Account service unavailable. Last snapshot retained.'}</div>}
     <section className="trade-panel" aria-label="Trade ticket">
       <div className="trade-toolbar"><form className="symbol-form" onSubmit={event => { event.preventDefault(); void loadQuote(symbolInput) }}><Icon name="search" size={14} /><input aria-label="Symbol" value={symbolInput} onChange={event => setSymbolInput(event.target.value.toUpperCase())} placeholder="Symbol" autoComplete="off" spellCheck={false} autoCapitalize="characters" disabled={editingLocked} /><button type="submit" className="symbol-enter" aria-label="Load symbol" title="Load symbol (Enter)" disabled={editingLocked || !symbolInput.trim()}>↵</button></form><button className={`icon-button refresh-quote ${quoteLoading ? 'is-loading' : ''}`} aria-label="Refresh quote" title="Refresh High / Low and quote" disabled={quoteLoading || editingLocked || !symbolInput.trim()} onClick={() => void loadQuote(symbolInput, true)}><Icon name="refresh" size={14} /></button><div className="segmented-control" aria-label="Order type"><button className={mode === 'breakout' ? 'selected' : ''} aria-pressed={mode === 'breakout'} disabled={editingLocked} onClick={() => setMode('breakout')}>Breakout</button><button className={mode === 'market' ? 'selected' : ''} aria-pressed={mode === 'market'} disabled={editingLocked} onClick={() => setMode('market')}>Market</button></div>{mode === 'market' && <div className="side-control" aria-label="Side"><button className={side === 'buy' ? 'selected buy' : ''} aria-pressed={side === 'buy'} disabled={editingLocked} onClick={() => setSide('buy')}>Buy</button><button className={side === 'sell' ? 'selected sell' : ''} aria-pressed={side === 'sell'} disabled={editingLocked} onClick={() => setSide('sell')}>Sell</button></div>}</div>
@@ -187,7 +188,7 @@ export default function App() {
         </>}
       </form><ErrorLine error={tradeError} onRefresh={manualRefreshOrders} />
     </section>
-    <div className="portfolio-wrapper"><UnifiedList positions={snapshot.positions} orders={snapshot.orders} closed={closureRecords} symbol={symbol} locked={unavailable || writing} selectionLocked={editingLocked} busy={orderBusy} loading={loading} onSelect={selectRow} onWrite={writeOrder} onError={error => setOrderError(previous => previous?.unknownResult ? previous : error)} onRefresh={() => void manualRefreshOrders().catch(() => {})} refreshing={ordersRefreshing} /><ErrorLine error={orderError ?? ordersError ?? positionsError} onRefresh={manualRefreshOrders} /></div>
+    <div className="portfolio-wrapper"><UnifiedList positions={snapshot.positions} orders={snapshot.orders} sold={soldRecords} longValue={snapshot.account?.long_market_value} symbol={symbol} locked={unavailable || writing} selectionLocked={editingLocked} busy={orderBusy} loading={loading} onSelect={selectRow} onWrite={writeOrder} onError={error => setOrderError(previous => previous?.unknownResult ? previous : error)} onRefresh={() => void manualRefreshOrders().catch(() => {})} refreshing={ordersRefreshing} /><ErrorLine error={orderError ?? ordersError ?? positionsError} onRefresh={manualRefreshOrders} /></div>
     {(feedback || fill) && <div className="workspace-feedback" role="status"><Icon name="check" size={12} />{fill ? `${fill.symbol ?? `#${fill.order_id}`} filled` : feedback}</div>}
   </div>
 }

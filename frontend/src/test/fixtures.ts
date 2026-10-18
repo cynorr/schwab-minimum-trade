@@ -22,6 +22,6 @@ export function order(overrides: Partial<OrderItem> = {}): OrderItem {
     order_id: '102', parent_order_id: null, symbol: 'NVDA', instruction: 'SELL', order_type: 'STOP',
     strategy_type: 'SINGLE', quantity: '100', filled_quantity: '0', stop_price: '136.20',
     duration: 'GOOD_TILL_CANCEL', session: 'NORMAL', status: 'WORKING', cancelable: true,
-    entered_at: now, child_orders: [], ...overrides,
+    entered_at: now, executions: [], child_orders: [], ...overrides,
   }
 }

@@ -16,15 +16,17 @@
 10. Replace 复用 `order_payload()`，取消深拷贝；保留原数量、有效期、税批次及其他已有可提交设置，避免简单重建导致“只改止损价”的语义变化。
 11. Replace 的整股数量仅以 JSON 整数放在订单腿部；支持腿部缺失时回退顶层，不再复制顶层数量或覆盖转换结果。非整股及缺失必要信息返回明确错误。移除 STOP 无关的限价字段，保留原触发设置并按其数值类型发送。
 12. `SCHWAB_REJECTED.details` 提供 HTTP 状态及券商 `message`、`errors`；空正文或非 JSON 正文不掩盖拒单。写请求仍零重试。
-13. 账户余额直接映射 `currentBalances.availableFunds`、`currentBalances.intradayBuyingPowerAmount` 与 `projectedBalances.stockBuyingPower`，保留旧购买力字段，不通过计算替代；前端中性显示七项余额、负号及原字段来源。
+13. 账户余额直接映射 `currentBalances.availableFunds`、`currentBalances.intradayBuyingPowerAmount` 与 `projectedBalances.stockBuyingPower`，保留旧购买力字段。前端顶部依次显示 Net Liq、Stock BP、Intraday BP、Available Dollars、Balance；仅 Balance 按用户要求合并 cash_balance 与 margin_balance 并保留来源说明，Long Value 移至 Holdings 汇总。
+
+14. Orders/SSE 每个订单仅增加 executions 成交数组；Sold Today 由前端按美东日期、SELL/FILLED 和股票聚合，保留逐笔追溯，独立于当前持仓。移除页面会话成交历史缓存；不增加接口、transactions 查询、轮询任务或持久化。范围排除跨日分批成交与部分成交后撤单。
 
 ## 验证结果
 
-- 117 项后端测试、59 项前端测试通过，前端生产构建通过。余额回归验证原始来源、旧日内字段为零时的新 Intraday BP、零现金与负融资余额、中性符号、缺失字段不替代。保留 OAuth、订单及写请求零重试等回归。
+- 后端 118 项、前端 64 项测试及生产构建通过。新增覆盖真实成交字段格式、父子单、相同成交保留、订单去重、加权均价、纽约日期及页面恢复；保留余额与交易交互测试。
 - 静态检查、格式检查、CLI 帮助和 LaunchAgent 模板语法检查通过。
-- 本轮在 `127.0.0.1:5678` 运行服务验证真实余额、REST 与 SSE 初始快照；前端实际页面验证显示值、负号和窄窗口布局。服务已加载新增余额字段。
+- 已在 `127.0.0.1:5678` 加载新版服务：REST 与 Streaming 连接正常，274 个订单（含子单）均有 executions 数组；69 个 FILLED 股票 SELL 订单共 118 笔成交，与 Schwab 原始条数及数量合计一致。另有 2 个非 EQUITY 卖单不纳入统计。GET/SSE 均验证；当前美东周日无当日卖出，页面显示 No sales today。
 - 真实 Schwab Production App 的授权、OTO 子单激活/部分成交、Replace、真实睡眠恢复和成交声音仍需实盘验收。
 
-自动化测试使用虚构凭据和模拟 Schwab；余额字段另使用现有授权执行真实账户 GET 核对，没有提交真实交易。LaunchAgent 模板已同步为直接运行脚本，未安装常驻服务。
+自动化测试使用虚构凭据和模拟 Schwab；余额与成交字段另使用现有授权执行真实账户 GET 核对，没有提交真实交易。LaunchAgent 模板已同步为直接运行脚本，未安装常驻服务。
 
 错误样本依据设计文档引用的 [Trader OpenAPI 副本](https://github.com/Patch-Code-Prosperity/Schwab-API-Sandbox/blob/main/account_orders_openapi.yaml) 中的 HTTP 状态和 `ServiceError`（`message`、`errors`）结构构造，文本是测试占位值，不是真实账户错误录制。移除人为构造的成功报价响应含 null 用例；Tick Size 等券商规则交给 Schwab，不为模拟用例添加本地规则。

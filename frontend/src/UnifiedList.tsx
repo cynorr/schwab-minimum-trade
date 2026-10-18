@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react'
-import { ApiError, type OrderItem } from './api'
+import { ApiError, type Decimal, type OrderItem } from './api'
 import { Icon } from './Icons'
-import { money, number, price, quantity, time, validPrice } from './format'
+import { money, number, price, quantity, validPrice } from './format'
 import { canReplaceStop, flattenOrders, ACTIVE_STATUSES } from './orders'
-import { portfolioSections, type SymbolRow, type ClosedSymbol } from './portfolio'
+import { portfolioSections, type SymbolRow, type SoldSymbol } from './portfolio'
 import type { Position } from './api'
+
+function executionTime(value: string) {
+  return new Date(value).toLocaleTimeString('en-GB', { timeZone: 'America/New_York', hour12: false })
+}
 
 function orderKey(order: OrderItem, index: number) { return order.order_id ?? `pending-${index}` }
 function orderLabel(order: OrderItem) {
@@ -98,13 +102,14 @@ function EntryRow({ row, selected, disabled, busy, onSelect, onWrite, onError }:
   </div>
 }
 
-export function UnifiedList({ positions, orders, closed, symbol, locked, selectionLocked, busy, loading, onSelect, onWrite, onError, onRefresh, refreshing }: {
-  positions: Position[]; orders: OrderItem[]; closed: ClosedSymbol[]; symbol: string
+export function UnifiedList({ positions, orders, sold, longValue, symbol, locked, selectionLocked, busy, loading, onSelect, onWrite, onError, onRefresh, refreshing }: {
+  positions: Position[]; orders: OrderItem[]; sold: SoldSymbol[]; symbol: string
+  longValue?: Decimal
   locked: boolean; selectionLocked: boolean; busy: string | null; loading: boolean
   onSelect: (row: SymbolRow) => void; onWrite: RowProps['onWrite']; onError: RowProps['onError']
   onRefresh: () => void; refreshing: boolean
 }) {
-  const sections = portfolioSections(positions, orders, closed)
+  const sections = portfolioSections(positions, orders)
   const common = { busy, onWrite, onError, onSelect }
   return <section className="portfolio-panel" aria-label="Unified portfolio">
     <div className="portfolio-scroll">
@@ -116,9 +121,18 @@ export function UnifiedList({ positions, orders, closed, symbol, locked, selecti
         {sections.holdings.length > 0 && <div className="holding-columns" aria-hidden="true"><span>Symbol</span><span>Qty</span><span>Avg</span><span className="market-value">Value</span><span>P/L</span><span>Stop / order</span><span /></div>}
         {sections.holdings.map(row => <HoldingRow key={row.symbol} row={row} selected={symbol === row.symbol} disabled={locked || selectionLocked} {...common} />)}
         {loading && sections.holdings.length === 0 && <div className="empty-row">Loading…</div>}
+        <div className="holdings-total" aria-label="Holdings total" title="currentBalances.longMarketValue"><span>Long Value</span><strong>{money(longValue)}</strong></div>
       </section>
-      <section aria-label="Closed today"><div className="list-section-heading"><span>Closed today <b>{sections.closed.length}</b></span><span className="session-scope" title="Only sell fills received while this page is open, with a confirmed flat position. Full-day history is not provided by the backend.">Session only</span></div>
-        {sections.closed.map(row => <div className="portfolio-row closed-row" key={row.symbol}><button className="symbol-button" aria-label={`Select ${row.symbol}`} disabled={selectionLocked} onClick={() => onSelect(row)}>{row.symbol}</button><span>Sold {quantity(row.closed?.quantity)}</span><span>{time(row.closed?.occurredAt)}</span><span className="inline-state">Flat</span></div>)}
+      <section aria-label="Sold Today"><div className="list-section-heading"><span>Sold Today <b>{sold.length}</b></span><span>ET · Gross proceeds</span></div>
+        {sold.length > 0 && <div className="sold-columns" aria-hidden="true"><span>Symbol</span><span>Sold</span><span>Avg</span><span>Amount</span><span>Last (ET)</span></div>}
+        {sold.map(row => <details className="sold-item" key={row.symbol}>
+          <summary className="portfolio-row sold-row" aria-label={`${row.symbol} sell executions`}><span>▸ {row.symbol}</span><span>{quantity(row.quantity)}</span><span>{price(row.averagePrice)}</span><span>{money(row.amount)}</span><span>{executionTime(row.occurredAt)}</span></summary>
+          <div className="sold-details">{row.executions.map((execution, index) => <div className="execution-row" key={index}>
+            <span>{executionTime(execution.time)} ET · {quantity(execution.quantity)} @ {price(execution.price)}</span>
+            <span>Order #{execution.order_id} · Activity #{execution.activity_id} · Leg {execution.leg_id}</span>
+          </div>)}</div>
+        </details>)}
+        {!loading && sold.length === 0 && <div className="empty-row">No sales today</div>}
       </section>
     </div>
   </section>

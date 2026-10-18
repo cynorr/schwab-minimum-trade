@@ -29,12 +29,18 @@ Stop the development server before using production preview on the same port. Te
 
 ## Unified portfolio
 
-One row per symbol. Holdings take precedence over entries, and entries take precedence over observed closures. Active child orders remain available after their parent fills. Additional buys and multiple stops are selected within the row, not merged into a synthetic order. The order selector uses B / S / O for Buy / Stop / Other.
+One row per symbol. Holdings take precedence over entries. Sold Today is independent of both. Active child orders remain available after their parent fills. Additional buys and multiple stops are selected within the row, not merged into a synthetic order. The order selector uses B / S / O for Buy / Stop / Other.
 
 Uncovered sell orders remain visible with quantity zero and a coverage warning. A missing ID never exposes cancel/replace; replacement eligibility matches the existing backend contract.
 
-The balance strip shows Net Liq, Available Funds, Cash Balance, Margin Balance, Intraday BP, Stock BP and Long Value. Hover over each value to see its native Schwab source path. Values are neutral, negative amounts use a minus sign, and missing fields remain `—`. Intraday BP uses `intraday_buying_power`, not the legacy `day_trading_buying_power`; Stock BP uses `stock_buying_power`, not a calculated multiple of available funds. Cash Balance and Margin Balance stay separate.
+The balance strip shows Net Liq, Stock BP, Intraday BP, Available Dollars and Balance, in that order. Balance is the frontend sum of `cash_balance` and `margin_balance`; its tooltip retains both original values. If either component is missing, Balance remains `—`. Other values are shown directly from their corresponding backend fields. Hover to see the source. Values are neutral and negative amounts use a minus sign. Intraday BP uses `intraday_buying_power`, not the legacy `day_trading_buying_power`; Stock BP uses `stock_buying_power`, not a calculated multiple of available funds.
 
-`Closed today · Session only` contains observed SELL fill events for the New York date, shown only after the position is flat and there are no remaining active orders. Historical creation dates are not execution dates. Closing/reloading the page loses session-only observations. No execution price or realized P/L is invented.
+Long Value is the last row of Holdings and uses the broker's `long_market_value` directly. It is not reconstructed from rounded displayed position values.
 
-Remaining backend data requests are recorded in [BACKEND-REQUIREMENTS.md](BACKEND-REQUIREMENTS.md). The balance mappings are implemented in the backend; the other requests are unchanged.
+Sold Today is reconstructed from the full order snapshot, including OTO children. It selects fully filled equity SELL orders whose latest execution is on today's `America/New_York` date. Each symbol shows sold quantity, weighted average price, gross proceeds before fees and the last fill time in ET. Expand a row to inspect quantity, price, time, order ID, activity ID and leg ID. Identical execution rows are preserved; only duplicate orders are deduplicated by order ID.
+
+Selling part of a holding or buying back the same symbol does not hide its sales. Reloads and reconnects restore the list from existing GET/SSE snapshots. `order_filled` remains a temporary notification, with no history cache. No realized P/L is calculated. The agreed scope assumes orders fill completely within seconds, excludes cross-day fills and partially filled cancelled orders, and keeps stop orders within the existing 59-day creation-date query window.
+
+The existing order interfaces now include `executions: [{activity_id, leg_id, quantity, price, time}]`. Prices and quantities are decimal strings, IDs are strings and times are UTC ISO 8601. No new endpoint, transaction query or polling task is added. Restart the backend to load the extended order mapping.
+
+Remaining backend data requests are recorded in [BACKEND-REQUIREMENTS.md](BACKEND-REQUIREMENTS.md). The balance mappings are implemented in the backend; Sold Today fields are also implemented.

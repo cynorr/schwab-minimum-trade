@@ -61,7 +61,7 @@ curl -N http://127.0.0.1:5678/api/v1/events
 | GET | `/health` | 认证、REST、Streaming、快照更新时间 |
 | GET | `/account` | 账户、Margin、Buying Power |
 | GET | `/positions` | 股票与 ETF 持仓 |
-| GET | `/orders` | 订单树；支持 `symbol`、`refresh` |
+| GET | `/orders` | 订单树与逐笔成交；支持 `symbol`、`refresh` |
 | GET | `/orders/{id}` | 从 Schwab 获取单个订单 |
 | GET | `/quotes/{symbol}` | Bid/Ask、High/Low、建议价格；支持 `refresh` |
 | GET | `/events` | SSE；连接后立即推送现有快照 |
@@ -73,7 +73,11 @@ curl -N http://127.0.0.1:5678/api/v1/events
 
 价格、金额和查询数量返回十进制字符串；下单数量必须为 JSON 正整数，价格输入必须为字符串。拒绝未定义字段。写请求的浏览器 Origin 必须匹配配置；没有 Origin 的本机 CLI 可直接调用。POST/PUT 需要 `Content-Type: application/json`。
 
-账户余额新增 `available_funds`（`currentBalances.availableFunds`）、`intraday_buying_power`（`currentBalances.intradayBuyingPowerAmount`）和 `stock_buying_power`（`projectedBalances.stockBuyingPower`）。保留旧的 `buying_power`、`day_trading_buying_power` 原始含义；缺失字段为 null，不按倍数换算或互相替代。前端分开展示 Cash Balance 与 Margin Balance，负数使用负号，无风险颜色。
+账户余额新增 `available_funds`（`currentBalances.availableFunds`）、`intraday_buying_power`（`currentBalances.intradayBuyingPowerAmount`）和 `stock_buying_power`（`projectedBalances.stockBuyingPower`）。保留旧的 `buying_power`、`day_trading_buying_power` 原始含义；缺失字段为 null，不按倍数换算或互相替代。后端保留 Cash Balance 与 Margin Balance 原值；前端合成为 Balance，悬停可查看组成。顶部顺序为 Net Liq、Stock BP、Intraday BP、Available Dollars、Balance；Long Value 位于 Holdings 末行汇总。负数使用负号，无风险颜色。
+
+Orders 的每个订单（包括 OTO 子单）新增 `executions` 数组，无成交时为 `[]`。每笔包含 `activity_id`、`leg_id`、`quantity`、`price`、`time`；数量与价格为十进制字符串，时间为 UTC ISO 8601。`GET /orders`、`GET /orders/{id}` 和 SSE `snapshot_updated.orders` 共用此结构，仍为 12 个业务接口。
+
+Sold Today 只使用现有最近 59 天创建的订单快照，不新增 `/closed-trades`、transactions 查询或后台任务。前端筛选完全成交的股票 SELL 订单，按最后一笔成交时间判断美东当天，按股票汇总卖出数量、加权均价、成交总额（未扣费用）和最后成交时间；展开可追溯原订单及成交活动。卖出部分持仓、当天买回均保留卖出记录；重新加载或重启后从快照恢复，不依赖成交提示事件。不计算已实现盈亏，不处理跨日分批成交和部分成交后撤单，止损单创建/更新须在查询窗口内。
 
 新建订单返回 HTTP 201，修改返回 200，取消返回 202。`accepted` 表示 Schwab 接受请求，不代表成交。三个写入成功响应统一为 `verified: false`；改单从 Location 提取新 ID 后立即返回，账户和订单由后台轮询及 Streaming 触发刷新。
 
@@ -103,9 +107,10 @@ npm run dev
 
 - 输入股票代码后按 Enter 查询；刷新按钮强制刷新行情；点击持仓会带入代码和整股数量。同一标的刷新不会覆盖已编辑的触发价，可点击「重置建议价」恢复。
 - 突破买入、市价买入和市价卖出均先核对，再点击 `Confirm & Send` 发送；成功表示请求已接受，等待券商同步。改止损和撤单直接发送。
+- 下方列表分为 Entries、Holdings、Sold Today；成交明细点击展开，时间显示 ET。
 - 页面通过四种命名 SSE 事件同步快照、报价、连接和成交提示，并每 5 秒读取健康状态以识别授权失效和恢复。SSE 自动重连，保留最后快照；前端不播放声音。
 - 写请求超时、断线或返回 `ORDER_RESULT_UNKNOWN` 时常驻显示琥珀色提示，不自动重发。请先在 Schwab 人工核对；「刷新订单」只读取订单，不代表原交易结果已确认。
-- 桌面采用单屏双栏，长列表在卡片内滚动；窄屏纵向排列。右上角可切换浅色/深色模式，仅保存主题偏好，不保存账户或订单数据。
+- 页面采用固定交易区和下方统一列表，长列表在卡片内滚动，适配半屏及窄窗口。右上角可切换浅色/深色模式，仅保存主题偏好，不保存账户或订单数据。
 
 ```bash
 npm test       # 模拟接口与 SSE，不连接券商、不提交真实交易
