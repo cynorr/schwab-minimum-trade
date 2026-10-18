@@ -584,7 +584,9 @@ ACCOUNT_FIELDS = {
     "liquidation_value": "liquidationValue",
     "long_market_value": "longMarketValue",
     "cash_balance": "cashBalance",
+    "available_funds": "availableFunds",
     "buying_power": "buyingPower",
+    "intraday_buying_power": "intradayBuyingPowerAmount",
     "day_trading_buying_power": "dayTradingBuyingPower",
     "margin_balance": "marginBalance",
     "maintenance_requirement": "maintenanceRequirement",
@@ -595,6 +597,9 @@ def map_account(raw: dict, updated_at: str) -> tuple[dict, list]:
     account = raw["securitiesAccount"]
     balances = account.get("currentBalances", {})
     mapped = {key: decimal_text(balances.get(source)) for key, source in ACCOUNT_FIELDS.items()}
+    mapped["stock_buying_power"] = decimal_text(
+        account.get("projectedBalances", {}).get("stockBuyingPower")
+    )
     mapped["updated_at"] = updated_at
     positions = []
     for position in account.get("positions", []):

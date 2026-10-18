@@ -33,6 +33,8 @@ One row per symbol. Holdings take precedence over entries, and entries take prec
 
 Uncovered sell orders remain visible with quantity zero and a coverage warning. A missing ID never exposes cancel/replace; replacement eligibility matches the existing backend contract.
 
-`Available` stays missing when the backend does not supply `available_funds`; buying power is never substituted. `Closed today · Session only` contains observed SELL fill events for the New York date, shown only after the position is flat and there are no remaining active orders. Historical creation dates are not execution dates. Closing/reloading the page loses session-only observations. No execution price or realized P/L is invented.
+The balance strip shows Net Liq, Available Funds, Cash Balance, Margin Balance, Intraday BP, Stock BP and Long Value. Hover over each value to see its native Schwab source path. Values are neutral, negative amounts use a minus sign, and missing fields remain `—`. Intraday BP uses `intraday_buying_power`, not the legacy `day_trading_buying_power`; Stock BP uses `stock_buying_power`, not a calculated multiple of available funds. Cash Balance and Margin Balance stay separate.
 
-The next backend data requests are recorded in [BACKEND-REQUIREMENTS.md](BACKEND-REQUIREMENTS.md). No backend code or configuration is changed by this frontend revision.
+`Closed today · Session only` contains observed SELL fill events for the New York date, shown only after the position is flat and there are no remaining active orders. Historical creation dates are not execution dates. Closing/reloading the page loses session-only observations. No execution price or realized P/L is invented.
+
+Remaining backend data requests are recorded in [BACKEND-REQUIREMENTS.md](BACKEND-REQUIREMENTS.md). The balance mappings are implemented in the backend; the other requests are unchanged.

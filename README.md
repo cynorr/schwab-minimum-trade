@@ -73,6 +73,8 @@ curl -N http://127.0.0.1:5678/api/v1/events
 
 价格、金额和查询数量返回十进制字符串；下单数量必须为 JSON 正整数，价格输入必须为字符串。拒绝未定义字段。写请求的浏览器 Origin 必须匹配配置；没有 Origin 的本机 CLI 可直接调用。POST/PUT 需要 `Content-Type: application/json`。
 
+账户余额新增 `available_funds`（`currentBalances.availableFunds`）、`intraday_buying_power`（`currentBalances.intradayBuyingPowerAmount`）和 `stock_buying_power`（`projectedBalances.stockBuyingPower`）。保留旧的 `buying_power`、`day_trading_buying_power` 原始含义；缺失字段为 null，不按倍数换算或互相替代。前端分开展示 Cash Balance 与 Margin Balance，负数使用负号，无风险颜色。
+
 新建订单返回 HTTP 201，修改返回 200，取消返回 202。`accepted` 表示 Schwab 接受请求，不代表成交。三个写入成功响应统一为 `verified: false`；改单从 Location 提取新 ID 后立即返回，账户和订单由后台轮询及 Streaming 触发刷新。
 
 每个交易操作最多一次券商写请求。未知写结果返回 HTTP 504、`result=unknown`、`ORDER_RESULT_UNKNOWN`。只在请求进行中阻止相同操作并发提交；请求结束后释放锁。前端收到 unknown 应提示用户在 Schwab 人工核对，之后可由用户明确提交新请求，无需重启。客户端不得自动重试未知结果。

@@ -57,7 +57,7 @@
     ⚬ SSE 重连中：● Reconnecting · Last 14:30:05（橙点）
     ⚬ 需重新授权：● Auth Required（红点，auth_status === "auth_required"）
 2. 核心资金指标（右侧水平排列）：
-  ⚬ 直接展示 /api/v1/account 返回的 liquidation_value、buying_power、day_trading_buying_power、long_market_value、margin_balance。
+  ⚬ 直接展示 /api/v1/account 返回的 liquidation_value、available_funds、cash_balance、margin_balance、intraday_buying_power、stock_buying_power、long_market_value。余额使用中性色和负号，不添加风险色或借款状态推断；悬停显示原始 API 字段路径。窄窗口分行展示。
 
 3.2 左栏：交易面板卡片（Trade Ticket Card）
 

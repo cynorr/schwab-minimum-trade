@@ -1,21 +1,20 @@
 # 下一版后端数据需求
 
-本文件是前端重构发现的数据缺口清单，不是本次后端修改方案。本次没有修改后端代码、配置、交易逻辑或请求重试规则。
+本文件记录前端需要的后端字段及尚未完成的数据缺口。余额映射已补齐；交易逻辑、请求重试规则及其他需求未在本次余额修改中调整。
 
-## P0：与 thinkorswim 对齐的 Available Dollars
+## 已完成：客观展示账户余额（2026-10-18）
 
-当前 `/account` 只映射 `currentBalances.buyingPower`、`dayTradingBuyingPower` 等字段。前者是购买力，不能直接改名为 Available Dollars，不能按固定杠杆倍数折算。
+通过真实账户 GET 确认后，`/account` 新增以下原值映射：
 
-需要：
+| 输出字段 | 原始来源 | 显示标签 |
+| --- | --- | --- |
+| `available_funds` | `currentBalances.availableFunds` | Available Funds |
+| `intraday_buying_power` | `currentBalances.intradayBuyingPowerAmount` | Intraday BP |
+| `stock_buying_power` | `projectedBalances.stockBuyingPower` | Stock BP |
 
-- 核对同一账户、同一时间的 thinkorswim Available Dollars 与券商原始余额。候选字段包括 `availableFunds`、`availableFundsNonMarginableTrade`，以及 current/projected balances 的不同口径；先验证，再确定映射。
-- 返回明确语义的 `available_funds: decimal string | null`，并记录数据来源、是否包含融资、挂单占用及未结算资金的处理口径。
-- 保留 `buying_power` 的独立含义。缺失值返回 `null`，不返回推算值或零占位。
-- 提供对应余额的真实更新时间。
+保留 `buying_power` 和旧 `day_trading_buying_power` 的独立含义。真实响应中的 Intraday BP 与旧日内字段不同，不能互相替代。Cash Balance 和 Margin Balance 分开展示，不自行合成为 Cash & Sweep，也不宣称已与 ToS 标签完成对照。所有新增字段仍为 `decimal string | null`，采用同一余额查询的更新时间。
 
-验收：同一时间与 thinkorswim 对照；不能因为两个金额接近 2 倍或 4 倍而认定口径相同。
-
-本次前端：显示 `Available —`，不拿购买力、现金余额或日内购买力替代。
+前端按 API 原值中性显示，负数使用负号，不使用括号或风险颜色；悬停可查看原始来源。不增加 Schwab 查询次数。
 
 ## P0：可在首次加载及断线后恢复的当日清仓历史
 

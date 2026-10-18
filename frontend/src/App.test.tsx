@@ -77,10 +77,37 @@ describe('compact trading workspace', () => {
   it('prioritizes High/Low, uses Low as the range denominator, and never substitutes buying power for Available', async () => {
     await ready(); await selectNvda()
     expect(screen.getByText('3.16%')).toBeTruthy()
-    const available = screen.getByText('Available').parentElement!
-    expect(available.textContent).toBe('Available—')
+    const available = screen.getByText('Available Funds').parentElement!
+    expect(available.textContent).toBe('Available Funds—')
     expect(screen.queryByText('$54,000.00')).toBe(null)
     expect(document.body.textContent).not.toMatch(/[\u3400-\u9fff]/)
+  })
+
+  it('shows native account balances with neutral signs and separate intraday and stock buying power', async () => {
+    await ready()
+    source().emit('snapshot_updated', {
+      account: { ...account, available_funds: '25000.25', cash_balance: '0.0',
+        margin_balance: '-5000.75', intraday_buying_power: '120000.50',
+        day_trading_buying_power: '0.0', stock_buying_power: '65000.50' },
+      positions: [position], orders, updated_at: now,
+    })
+    const balances = screen.getByRole('region', { name: 'Account balances' })
+    expect(balances.className).toBe('account-strip')
+    for (const [label, value, sourcePath] of [
+      ['Available Funds', '$25,000.25', 'currentBalances.availableFunds'],
+      ['Cash Balance', '$0.00', 'currentBalances.cashBalance'],
+      ['Margin Balance', '-$5,000.75', 'currentBalances.marginBalance'],
+      ['Intraday BP', '$120,000.50', 'currentBalances.intradayBuyingPowerAmount'],
+      ['Stock BP', '$65,000.50', 'projectedBalances.stockBuyingPower'],
+    ]) {
+      const metric = within(balances).getByText(label).parentElement!
+      expect(metric.textContent).toBe(label + value)
+      expect(metric.className).toBe('account-metric')
+      expect(metric.title).toBe(sourcePath)
+    }
+    expect(balances.textContent).not.toMatch(/Margin Loan|Cash & Sweep|\(|\)/)
+    expect(within(balances).queryByText('$75,000.00')).toBe(null)
+    expect(writes).toHaveLength(0)
   })
 
   it('fills whole position shares and preserves prices and quantity across REST and SSE changes', async () => {

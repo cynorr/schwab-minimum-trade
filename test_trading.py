@@ -709,6 +709,9 @@ async def test_account_positions_orders_contract_and_failed_snapshot_retention(a
     assert response.json()["margin_balance"] == "15000.00"
     assert response.json()["buying_power"] == "54000.00"
     assert response.json()["cash_balance"] is None
+    assert response.json()["available_funds"] is None
+    assert response.json()["intraday_buying_power"] is None
+    assert response.json()["stock_buying_power"] is None
     positions = (await client.get("/api/v1/positions")).json()
     assert positions["positions"][0]["quantity"] == "10.5"
     timestamp = runtime.state.account_updated_at
@@ -723,6 +726,29 @@ async def test_account_positions_orders_contract_and_failed_snapshot_retention(a
     start = backend.datetime.fromisoformat(order_request.url.params["fromEnteredTime"])
     end = backend.datetime.fromisoformat(order_request.url.params["toEnteredTime"])
     assert end - start == backend.timedelta(days=59)
+
+
+async def test_account_balance_fields_keep_native_sources_and_zero_values(api):
+    client, runtime, broker = api
+    account = broker.account["securitiesAccount"]
+    account["currentBalances"].update(
+        availableFunds=25000.25,
+        intradayBuyingPowerAmount=120000.5,
+        dayTradingBuyingPower=0.0,
+        cashBalance=0.0,
+        marginBalance=-5000.75,
+    )
+    account["projectedBalances"] = {"stockBuyingPower": 65000.5, "availableFunds": 24000.0}
+    await runtime.refresh("account")
+    result = (await client.get("/api/v1/account")).json()
+    assert result["available_funds"] == "25000.25"
+    assert result["intraday_buying_power"] == "120000.5"
+    assert result["day_trading_buying_power"] == "0.0"
+    assert result["stock_buying_power"] == "65000.5"
+    assert result["buying_power"] == "54000.00"
+    assert result["cash_balance"] == "0.0"
+    assert result["margin_balance"] == "-5000.75"
+    assert not broker.writes()
 
 
 async def test_orders_parent_child_nullable_and_filter(api):

@@ -4,7 +4,10 @@ export type Decimal = string | null
 export interface Account {
   liquidation_value: Decimal
   buying_power: Decimal
+  stock_buying_power?: Decimal
+  intraday_buying_power?: Decimal
   day_trading_buying_power: Decimal
+  cash_balance?: Decimal
   long_market_value: Decimal
   margin_balance: Decimal
   available_funds?: Decimal

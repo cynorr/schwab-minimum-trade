@@ -1156,8 +1156,11 @@ Response：
   "liquidation_value": "125000.00",
   "long_market_value": "98000.00",
   "cash_balance": "12000.00",
+  "available_funds": "25000.25",
   "buying_power": "54000.00",
-  "day_trading_buying_power": "80000.00",
+  "intraday_buying_power": "120000.50",
+  "stock_buying_power": "65000.50",
+  "day_trading_buying_power": "0.00",
   "margin_balance": "15000.00",
   "maintenance_requirement": "24500.00",
   "updated_at": "2026-10-15T14:30:00Z"
@@ -1165,6 +1168,16 @@ Response：
 ```
 
 示例数值不代表真实账户。
+
+所有余额使用券商原值，不推算杠杆、贷款或风险余量。新增映射：
+
+| 输出字段 | Schwab 原始来源 |
+| --- | --- |
+| `available_funds` | `currentBalances.availableFunds` |
+| `intraday_buying_power` | `currentBalances.intradayBuyingPowerAmount` |
+| `stock_buying_power` | `projectedBalances.stockBuyingPower` |
+
+`day_trading_buying_power` 继续返回旧字段 `currentBalances.dayTradingBuyingPower`，不替代新的 Intraday BP。`cash_balance` 和 `margin_balance` 独立返回，不合成为 Cash & Sweep。前端保留负号、使用中性显示，可悬停查看字段来源。
 
 缺失字段返回 `null`。
 
