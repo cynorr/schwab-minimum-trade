@@ -49,13 +49,13 @@ Net Liq | Stock BP | Intraday BP | Available Dollars | Balance
     ⚬ SSE 重连中：● Reconnecting · Last 14:30:05（橙点）
     ⚬ 需重新授权：● Auth Required（红点，auth_status === "auth_required"）
 2. 核心资金指标（右侧水平排列）：
-  ⚬ 顶部依次为 Net Liq、Stock BP、Intraday BP、Available Dollars、Balance；分别使用 liquidation_value、stock_buying_power、intraday_buying_power、available_funds，以及 cash_balance + margin_balance。Balance 悬停显示两个原值，任一缺失时显示 —。余额使用中性色和负号，不添加风险色或计息状态推断；窄窗口分行展示。Long Value 使用原生 long_market_value，移至 Holdings 的最后一行汇总。
+  ⚬ 顶部依次为 Net Liq、Stock BP、Intraday BP、Available Dollars、Balance；分别使用 liquidation_value、stock_buying_power、intraday_buying_power、available_funds，以及 cash_balance + margin_balance。Balance 悬停显示两个原值，任一缺失时显示 —。余额使用中性色和负号，不添加风险色或计息状态推断；窄窗口分行展示。顶部金额仅显示整数部分（向零截取），不修改 API 精度。Long Value 使用原生 long_market_value，在 Holdings 末行显示整数并与 Value 列对齐。
 
 3.2 固定交易区：交易面板卡片（Trade Ticket Card）
 
 A. 标的查询与实时报价胶囊（按需触发）
 
-⚬ 触发时机：严禁在输入字母时逐字触发请求。仅在以下 3 种操作时调用 GET /api/v1/quotes/{symbol}：
+⚬ 触发时机：严禁在输入字母时逐字触发请求。按 `/` 清空并聚焦搜索，确认和发送期间保持输入锁定；仅在以下 3 种操作时调用 GET /api/v1/quotes/{symbol}：
   1. 在 Symbol 胶囊框输入代码后按 Enter；
   2. 点击右侧圆形 ( ↻ ) 按钮（此时附带 ?refresh=true）；
   3. 点击右侧持仓列表中的某一行股票。
@@ -66,7 +66,7 @@ B. 交易模式与行内确认（Inline Review）
 通过顶部 Segmented Control 切换 突破单（Breakout） 与 市价单（Market）：
 
 1. 编辑态（Edit State）：
-  ⚬ Breakout 模式：切换新 Symbol 时自动将 suggested_buy_stop 和 suggested_sell_stop 填入输入框；同一 Symbol 后续收到行情刷新或手動点 ↻ 时，绝不自动覆盖用户已编辑的输入框数值（提供微小的 重置建议价 按钮）。
+  ⚬ Breakout 模式：切换新 Symbol 时，纽约工作日 09:30–16:00 且对应 High/Low 为正值时使用 High+固定偏移 / Low；其他时间或缺失时逐侧降级为 Ask/Bid → last_price → close_price，并展示来源。全部缺失时留空显示 —，不使用 0。只映射现有 Quote 响应字段，保持 fields=quote，无新增接口、数据组或查询。此判断不替代完整交易所日历（包括提前收市）。同一 Symbol 后续收到行情刷新或手動点 ↻ 时，绝不自动覆盖用户已编辑的输入框数值（提供微小的 重置建议价 按钮）。
   ⚬ Market 模式：仅展示 Qty 输入框。若该 Symbol 在当前订单列表中有活动的 SELL STOP，在下方静默显示一行提示胶囊：已挂止损 100股 @ $136.20 [撤单]（可点撤单，也可直接进入下一步，不强制拦截）。
   ⚬ 点击底部 ( Review Order ) 胶囊按钮进入确认态。
 2. 行内确认态（Inline Review State）：
@@ -78,7 +78,11 @@ B. 交易模式与行内确认（Inline Review）
 
 3.3 下方统一列表（Entries / Holdings / Sold Today）
 
-Entries 和 Holdings 每个股票一行，持仓优先；同一股票的多个买单、止损单通过行内选择器切换，操作仍绑定真实订单 ID。父单已成交时继续递归提取活动子单，不显示置灰父单占位。Holdings 最后一行汇总直接展示 `long_market_value`，点击股票带入整股持仓数量并查询报价。
+Entries 和 Holdings 每个股票一行，持仓优先；同一股票的多个买单、止损单全部行内展开，操作仍绑定真实订单 ID，但不在普通行展示 ID 或重复价格。Awaiting parent/activation 单独显示简短状态，不能当成 Working；仍不可改单。父单已成交时继续递归提取活动子单，不显示置灰父单占位。Holdings 最后一行汇总直接展示 `long_market_value`，点击股票带入整股持仓数量并查询报价。
+
+标尺改为原生 range 控件：刻度固定、滑块移动，点击定位，右移增大，左移减小。方向键每次一格，Shift 两格；手动输入超出当前范围才重设范围，拖动不平移刻度。修改精细度会改变范围和刻度。
+
+P/L 同列两行展示持仓浮盈和当日盈亏，均带百分比。持仓浮盈金额取 longOpenProfitLoss；持仓浮盈百分比为 open_profit_loss / (average_price × quantity) × 100。当日金额和百分比分别取 currentDayProfitLoss、currentDayProfitLossPercentage。不拼接订单推算买入成本。
 
 Sold Today 是独立区域，不受持仓是否归零或重新买入影响。递归解析完整订单快照，只统计股票 SELL 且 FILLED 的订单，以最后一笔实际成交时间判断 `America/New_York` 当天。每个股票展示卖出股数、实际成交加权均价、未扣费用总额和最后成交时间（ET）；点击行展开逐笔数量、价格、时间、订单 ID、活动 ID、腿 ID。不展示已实现盈亏。
 

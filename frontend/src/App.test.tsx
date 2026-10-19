@@ -34,6 +34,7 @@ async function selectNvda() {
   await waitFor(() => expect((screen.getByLabelText('Buy stop') as HTMLInputElement).value).toBe('140.51'))
 }
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(now))
   writes = []; quoteCalls = []; MockEventSource.instances = []; quoteVersion = quote
   orders = [order({ order_id: '101', instruction: 'BUY', strategy_type: 'TRIGGER', status: 'FILLED', cancelable: false, child_orders: [order()] })]
   nextWrite = async () => json({ result: 'accepted', order_id: '200', verified: false }, 201)
@@ -52,7 +53,7 @@ beforeEach(() => {
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 0 })
   vi.stubGlobal('localStorage', { getItem: () => null, setItem: vi.fn() })
 })
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('compact trading workspace', () => {
   it('loads quotes only through explicit actions, never health polling, visibility, or SSE reconnects', async () => {
@@ -96,10 +97,10 @@ describe('compact trading workspace', () => {
     expect(Array.from(balances.querySelectorAll('.account-metric > span'), node => node.textContent))
       .toEqual(['Net Liq', 'Stock BP', 'Intraday BP', 'Available Dollars', 'Balance'])
     for (const [label, value, sourcePath] of [
-      ['Available Dollars', '$25,000.25', 'currentBalances.availableFunds'],
-      ['Balance', '-$5,000.75', 'currentBalances.cashBalance $0.00 + currentBalances.marginBalance -$5,000.75'],
-      ['Intraday BP', '$120,000.50', 'currentBalances.intradayBuyingPowerAmount'],
-      ['Stock BP', '$65,000.50', 'projectedBalances.stockBuyingPower'],
+      ['Available Dollars', '$25,000', 'currentBalances.availableFunds'],
+      ['Balance', '-$5,000', 'currentBalances.cashBalance $0.00 + currentBalances.marginBalance -$5,000.75'],
+      ['Intraday BP', '$120,000', 'currentBalances.intradayBuyingPowerAmount'],
+      ['Stock BP', '$65,000', 'projectedBalances.stockBuyingPower'],
     ]) {
       const metric = within(balances).getByText(label).parentElement!
       expect(metric.textContent).toBe(label + value)
@@ -112,15 +113,15 @@ describe('compact trading workspace', () => {
     const holdings = screen.getByRole('region', { name: 'Holdings' })
     const total = holdings.lastElementChild!
     expect(total.getAttribute('aria-label')).toBe('Holdings total')
-    expect(total.textContent).toBe('Long Value$86,000.00')
+    expect(total.textContent).toBe('Long Value$86,000')
     expect(total.getAttribute('title')).toBe('currentBalances.longMarketValue')
     expect(writes).toHaveLength(0)
   })
 
   it.each([
-    ['1250.25', '0.0', '$1,250.25'],
-    ['200.25', '-500.75', '-$300.50'],
-    ['0.0', '0.0', '$0.00'],
+    ['1250.25', '0.0', '$1,250'],
+    ['200.25', '-500.75', '-$300'],
+    ['0.0', '0.0', '$0'],
     [null, '-500.75', '—'],
     ['200.25', null, '—'],
   ])('combines cash %s and margin %s without assuming missing balances are zero', async (cash, margin, expected) => {
@@ -230,9 +231,10 @@ describe('compact trading workspace', () => {
     await ready()
     expect(screen.getAllByRole('button', { name: 'Select NVDA' })).toHaveLength(1)
     expect(within(screen.getByRole('region', { name: 'Entries' })).queryByRole('button', { name: 'Select NVDA' })).toBe(null)
-    fireEvent.change(screen.getByLabelText('NVDA order target'), { target: { value: '103' } })
-    fireEvent.change(screen.getByLabelText('NVDA stop price'), { target: { value: '138.50' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Apply stop NVDA' }))
+    expect(screen.queryByRole('combobox', { name: 'NVDA order target' })).toBe(null)
+    const second = screen.getByLabelText('NVDA Stop 50')
+    fireEvent.change(within(second).getByLabelText('NVDA stop price'), { target: { value: '138.50' } })
+    fireEvent.click(within(second).getByRole('button', { name: 'Apply stop NVDA' }))
     await waitFor(() => expect(writes).toHaveLength(1))
     expect(writes[0].path).toBe('/orders/103/stop')
     expect(JSON.parse(writes[0].init.body as string)).toEqual({ new_stop: '138.50' })
@@ -266,15 +268,41 @@ describe('compact trading workspace', () => {
     expect(writes).toEqual([])
   })
 
-  it('does not turn missing High/Low into zero prices or enable an uninitialized price ruler', async () => {
+  it('uses available Bid/Ask when High/Low are missing, showing sources without zero placeholders', async () => {
     await ready()
+    expect((screen.getByLabelText('Buy stop') as HTMLInputElement).placeholder).toBe('—')
     quoteVersion = { ...quote, day_high: '0', day_low: '0', suggested_buy_stop: null, suggested_sell_stop: null }
     fireEvent.click(screen.getByRole('button', { name: 'Select NVDA' }))
     await waitFor(() => expect((screen.getByRole('button', { name: 'Refresh quote' }) as HTMLButtonElement).disabled).toBe(false))
-    expect(within(screen.getByLabelText('Quote')).queryByText('0.00')).toBe(null)
-    expect(screen.getByRole('slider', { name: 'Buy price ruler' }).getAttribute('aria-disabled')).toBe('true')
-    expect((screen.getByRole('button', { name: 'Review' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByLabelText('Buy stop') as HTMLInputElement).value).toBe('140.22')
+    expect((screen.getByLabelText('Sell stop') as HTMLInputElement).value).toBe('140.20')
+    expect(screen.getByRole('note').textContent).toContain('Buy · Ask; Stop · Bid')
     expect(quoteCalls).toHaveLength(1)
+  })
+
+  it('focuses and clears symbol search with slash, without fetching or changing a frozen review', async () => {
+    await ready(); await selectNvda()
+    const field = screen.getByLabelText('Symbol') as HTMLInputElement
+    screen.getByLabelText('Buy stop').focus()
+    fireEvent.keyDown(document.activeElement!, { key: '/' })
+    expect(document.activeElement).toBe(field)
+    expect(field.value).toBe('')
+    expect(quoteCalls).toHaveLength(1)
+    fireEvent.change(field, { target: { value: 'NVDA' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }))
+    fireEvent.keyDown(document, { key: '/' })
+    expect(field.value).toBe('NVDA')
+    expect(field.disabled).toBe(true)
+  })
+
+  it('shows native open and daily P/L amounts and percentages without joining orders', async () => {
+    orders = []
+    await ready()
+    const holdings = screen.getByRole('region', { name: 'Holdings' })
+    expect(within(holdings).getByText('+$482.50')).toBeTruthy()
+    expect(within(holdings).getByText('+3.56%')).toBeTruthy()
+    expect(within(holdings).getByText('+$210.00')).toBeTruthy()
+    expect(within(holdings).getByText('+1.50%')).toBeTruthy()
   })
 
   it('does not expose cancel/replace without IDs or replace a pending child stop', async () => {

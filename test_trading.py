@@ -1343,3 +1343,28 @@ async def test_execution_details_in_order_reads_and_snapshot(api):
     assert runtime.snapshot()["orders"] == orders
     single = (await client.get("/api/v1/orders/123")).json()
     assert single["child_orders"][0]["executions"] == expected
+
+
+async def test_native_open_profit_and_quote_reference_fields(api):
+    client, runtime, broker = api
+    broker.account["securitiesAccount"]["positions"][0].update(
+        longOpenProfitLoss=-1511.399999999998,
+        currentDayProfitLoss=472.200000000001,
+        currentDayProfitLossPercentage=2.69,
+    )
+    await runtime.refresh("account")
+    position = (await client.get("/api/v1/positions")).json()["positions"][0]
+    assert position["open_profit_loss"] == "-1511.399999999998"
+    assert position["day_profit_loss"] == "472.200000000001"
+    assert position["day_profit_loss_percent"] == "2.69"
+    broker.quote["NVDA"]["quote"].update(
+        lastPrice=216.72, closePrice=214.13, highPrice=0.0, lowPrice=0.0
+    )
+    quote = (await client.get("/api/v1/quotes/NVDA")).json()
+    assert quote["last_price"] == "216.72"
+    assert quote["close_price"] == "214.13"
+    assert "regular_market_time" not in quote
+    assert quote["suggested_buy_stop"] is None
+    quote_requests = [r for r in broker.requests if r.url.path == "/marketdata/v1/quotes"]
+    assert len(quote_requests) == 1
+    assert quote_requests[0].url.params["fields"] == "quote"

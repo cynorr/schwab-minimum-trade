@@ -1199,12 +1199,15 @@ Response：
       "average_price": "135.00",
       "market_value": "14100.00",
       "day_profit_loss": "210.00",
+      "open_profit_loss": "600.00",
       "day_profit_loss_percent": "1.51"
     }
   ],
   "updated_at": "2026-10-15T14:30:00Z"
 }
 ```
+
+`open_profit_loss` 直接映射 `positions[].longOpenProfitLoss`；`day_profit_loss` 与 `day_profit_loss_percent` 保留当日口径。前端使用平均价 × 股数为分母计算持仓浮盈百分比，不拼接历史买单。缺失字段仍为 null，REST/SSE 共用相同映射。
 
 ### 17.3 Orders
 
@@ -1313,6 +1316,8 @@ Response：
   "ask": "140.22",
   "day_high": "140.50",
   "day_low": "136.20",
+  "last_price": "140.21",
+  "close_price": "138.00",
   "suggested_buy_stop": "140.51",
   "suggested_sell_stop": "136.20",
   "updated_at": "2026-10-15T14:30:01Z"
@@ -1320,6 +1325,8 @@ Response：
 ```
 
 报价缺失时，对应字段返回 `null`。
+
+`last_price`、`close_price` 分别映射 quote.lastPrice、quote.closePrice；原有报价请求参数保持 `fields=quote`，不增加数据组或请求次数。前端仅按纽约工作日 09:30–16:00 与正值 High/Low 选择默认价，其他时间或缺失时依次参考 Ask/Bid、Last、Close，并标记来源；原建议价格字段语义不变。
 
 Price Guide 不提供独立 Endpoint。
 

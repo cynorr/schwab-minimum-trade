@@ -64,3 +64,18 @@ export function ticketIssue(ticket: Ticket, quote: Quote | null, held: number | 
   if (bid !== null && Number(ticket.sell_stop) >= bid) return 'Sell stop must be below Bid.'
   return null
 }
+
+export function quoteDefaults(quote: Quote | null, now = new Date()) {
+  if (!quote) return { buy: '', stop: '', note: '' }
+  const clock = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now)
+  const weekday = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short' }).format(now)
+  const regular = !['Sat', 'Sun'].includes(weekday) && clock >= '09:30' && clock < '16:00'
+  const available = (...values: (string | null)[]) => values.find(value => value !== null && validPrice(value)) ?? ''
+  const last = available(quote.last_price, quote.close_price)
+  const buy = available(regular && validPrice(quote.day_high ?? '') ? quote.suggested_buy_stop : null, quote.ask, last)
+  const stop = available(regular && validPrice(quote.day_low ?? '') ? quote.suggested_sell_stop : null, quote.bid, last)
+  const source = (value: string, primary: string | null, regularPrimary: string | null, name: string) => !value ? 'unavailable' : regular && value === regularPrimary ? name : value === primary ? (name === 'High' ? 'Ask' : 'Bid') : value === quote.last_price ? 'Last trade' : 'Previous close'
+  const buySource = source(buy, quote.ask, quote.suggested_buy_stop, 'High')
+  const stopSource = source(stop, quote.bid, quote.suggested_sell_stop, 'Low')
+  return { buy, stop, note: buySource === 'High' && stopSource === 'Low' ? '' : `Defaults: Buy · ${buySource}; Stop · ${stopSource}. Reference prices; review before sending.` }
+}

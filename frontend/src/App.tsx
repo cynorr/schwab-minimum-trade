@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ApiError, api, asApiError, errorMessage, type Quote, type Ticket } from './api'
 import { Icon } from './Icons'
-import { money, number, price, quantity, time, validPrice } from './format'
+import { money, number, price, quantity, time, validPrice, wholeMoney } from './format'
 import { activeStops } from './orders'
 import { soldToday, type SymbolRow } from './portfolio'
-import { BUY_LIMIT, priceTick, quantityUnit, ticketIssue, type QuantityUnit } from './trading'
+import { BUY_LIMIT, priceTick, quoteDefaults, quantityUnit, ticketIssue, type QuantityUnit } from './trading'
 import { Ruler } from './Ruler'
 import { UnifiedList } from './UnifiedList'
 import { useWorkspace } from './useWorkspace'
@@ -53,6 +53,8 @@ export default function App() {
   const [feedback, setFeedback] = useState('')
   const writeLock = useRef(false)
   const reviewHeading = useRef<HTMLHeadingElement>(null)
+  const symbolInputRef = useRef<HTMLInputElement>(null)
+  const [defaultNote, setDefaultNote] = useState('')
   const qtyInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -70,6 +72,17 @@ export default function App() {
   const unavailable = authRequired || healthError !== null || !health || health.schwab_rest !== 'connected' || connection !== 'open'
   const writing = sending || orderBusy !== null
   const editingLocked = review !== null || sending
+  useEffect(() => {
+    function search(event: KeyboardEvent) {
+      if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey || event.isComposing || editingLocked) return
+      event.preventDefault()
+      setSymbolInput('')
+      symbolInputRef.current?.focus()
+    }
+    document.addEventListener('keydown', search)
+    return () => document.removeEventListener('keydown', search)
+  }, [editingLocked])
+
   const held = snapshot.positions.find(position => position.symbol === symbol)
   const heldQty = number(held?.quantity)
   const stops = activeStops(snapshot.orders, symbol)
@@ -102,7 +115,7 @@ export default function App() {
     setSymbol(next); setSymbolInput(next); setQuoteLoading(true); setQuoteError(null)
     setTradeError(previous => previous?.unknownResult ? previous : null); setFeedback('')
     if (changed) {
-      setQuote(null); setQuoteFetchedAt(null); setBuyStop(''); setSellStop(''); setFine(false)
+      setQuote(null); setQuoteFetchedAt(null); setBuyStop(''); setSellStop(''); setDefaultNote(''); setFine(false)
       setQty(positionQty ?? ''); setUnit(100); quantityEdited.current = positionQty !== undefined; suggestionsInitialized.current = ''
     } else if (positionQty !== undefined) editQuantity(positionQty)
     try {
@@ -113,8 +126,9 @@ export default function App() {
       setAutoTick(priceTick(nextQuote))
       setSmallestTick((number(nextQuote.ask) ?? number(nextQuote.day_high) ?? 1) < 1 ? '0.0001' : '0.01')
       if (suggestionsInitialized.current !== next) {
-        setBuyStop(nextQuote.suggested_buy_stop ?? ''); setSellStop(nextQuote.suggested_sell_stop ?? '')
-        const initialUnit = quantityUnit(number(nextQuote.suggested_buy_stop) ?? number(nextQuote.ask) ?? number(nextQuote.day_high) ?? 100)
+        const defaults = quoteDefaults(nextQuote)
+        setBuyStop(defaults.buy); setSellStop(defaults.stop); setDefaultNote(defaults.note)
+        const initialUnit = quantityUnit(number(defaults.buy) ?? number(nextQuote.ask) ?? number(nextQuote.day_high) ?? 100)
         setUnit(initialUnit); if (!quantityEdited.current) setQty(String(initialUnit))
         suggestionsInitialized.current = next
       }
@@ -174,16 +188,17 @@ export default function App() {
       ['Intraday BP', snapshot.account?.intraday_buying_power, 'currentBalances.intradayBuyingPowerAmount'],
       ['Available Dollars', snapshot.account?.available_funds, 'currentBalances.availableFunds'],
       ['Balance', balance, `currentBalances.cashBalance ${money(snapshot.account?.cash_balance)} + currentBalances.marginBalance ${money(snapshot.account?.margin_balance)}`],
-    ] as const).map(([label, value, source]) => <div className="account-metric" key={label} title={source}><span>{label}</span><strong>{money(value)}</strong></div>)}</section>
+    ] as const).map(([label, value, source]) => <div className="account-metric" key={label} title={source}><span>{label}</span><strong>{wholeMoney(value)}</strong></div>)}</section>
     {(authRequired || healthError || (health && health.schwab_rest !== 'connected')) && <div className="service-note" role="status"><Icon name="alert" size={13} />{authRequired ? 'Authorization required: run .venv/bin/python schwab_backend.py auth' : healthError ? 'Local backend disconnected. Reconnecting…' : 'Account service unavailable. Last snapshot retained.'}</div>}
     <section className="trade-panel" aria-label="Trade ticket">
-      <div className="trade-toolbar"><form className="symbol-form" onSubmit={event => { event.preventDefault(); void loadQuote(symbolInput) }}><Icon name="search" size={14} /><input aria-label="Symbol" value={symbolInput} onChange={event => setSymbolInput(event.target.value.toUpperCase())} placeholder="Symbol" autoComplete="off" spellCheck={false} autoCapitalize="characters" disabled={editingLocked} /><button type="submit" className="symbol-enter" aria-label="Load symbol" title="Load symbol (Enter)" disabled={editingLocked || !symbolInput.trim()}>↵</button></form><button className={`icon-button refresh-quote ${quoteLoading ? 'is-loading' : ''}`} aria-label="Refresh quote" title="Refresh High / Low and quote" disabled={quoteLoading || editingLocked || !symbolInput.trim()} onClick={() => void loadQuote(symbolInput, true)}><Icon name="refresh" size={14} /></button><div className="segmented-control" aria-label="Order type"><button className={mode === 'breakout' ? 'selected' : ''} aria-pressed={mode === 'breakout'} disabled={editingLocked} onClick={() => setMode('breakout')}>Breakout</button><button className={mode === 'market' ? 'selected' : ''} aria-pressed={mode === 'market'} disabled={editingLocked} onClick={() => setMode('market')}>Market</button></div>{mode === 'market' && <div className="side-control" aria-label="Side"><button className={side === 'buy' ? 'selected buy' : ''} aria-pressed={side === 'buy'} disabled={editingLocked} onClick={() => setSide('buy')}>Buy</button><button className={side === 'sell' ? 'selected sell' : ''} aria-pressed={side === 'sell'} disabled={editingLocked} onClick={() => setSide('sell')}>Sell</button></div>}</div>
+      <div className="trade-toolbar"><form className="symbol-form" onSubmit={event => { event.preventDefault(); void loadQuote(symbolInput) }}><Icon name="search" size={14} /><input ref={symbolInputRef} aria-label="Symbol" value={symbolInput} onChange={event => setSymbolInput(event.target.value.toUpperCase())} placeholder="Symbol /" autoComplete="off" spellCheck={false} autoCapitalize="characters" disabled={editingLocked} /><button type="submit" className="symbol-enter" aria-label="Load symbol" title="Load symbol (Enter)" disabled={editingLocked || !symbolInput.trim()}>↵</button></form><button className={`icon-button refresh-quote ${quoteLoading ? 'is-loading' : ''}`} aria-label="Refresh quote" title="Refresh High / Low and quote" disabled={quoteLoading || editingLocked || !symbolInput.trim()} onClick={() => void loadQuote(symbolInput, true)}><Icon name="refresh" size={14} /></button><div className="segmented-control" aria-label="Order type"><button className={mode === 'breakout' ? 'selected' : ''} aria-pressed={mode === 'breakout'} disabled={editingLocked} onClick={() => setMode('breakout')}>Breakout</button><button className={mode === 'market' ? 'selected' : ''} aria-pressed={mode === 'market'} disabled={editingLocked} onClick={() => setMode('market')}>Market</button></div>{mode === 'market' && <div className="side-control" aria-label="Side"><button className={side === 'buy' ? 'selected buy' : ''} aria-pressed={side === 'buy'} disabled={editingLocked} onClick={() => setSide('buy')}>Buy</button><button className={side === 'sell' ? 'selected sell' : ''} aria-pressed={side === 'sell'} disabled={editingLocked} onClick={() => setSide('sell')}>Sell</button></div>}</div>
       <div className="quotes" aria-label="Quote" aria-busy={quoteLoading}><div className="high-low"><div><span>High</span><strong>{price(high !== null && high > 0 ? high : null)}</strong></div><div><span>Low</span><strong>{price(low !== null && low > 0 ? low : null)}</strong></div></div><div className="range-quote" title={`(High − Low) / Low. High / Low fetched ${time(quoteFetchedAt)}; refresh manually.`}><span>Range</span><strong>{range === null ? '—' : `${range.toFixed(2)}%`}</strong></div><div className="bid-ask"><div><span>Ask</span><strong>{price(quote?.ask)}</strong></div><div><span>Bid</span><strong>{price(quote?.bid)}</strong></div></div></div>
       <ErrorLine error={quoteError} />
+      {defaultNote && mode === 'breakout' && <div className="default-note" role="note">{defaultNote}</div>}
       <form className="ticket-form" onSubmit={startReview}>
         {review ? <div className="review-block"><h2 ref={reviewHeading} tabIndex={-1}>Review <strong>{review.symbol}</strong></h2><div className="review-summary">{review.mode === 'breakout' ? `BUY STOP ${quantity(review.qty)} @ ${price(review.buy_stop)} DAY → SELL STOP ${price(review.sell_stop)} GTC` : `MARKET ${review.side.toUpperCase()} ${quantity(review.qty)} · DAY`}</div><div className="review-numbers"><span>{review.mode === 'breakout' ? 'Notional' : 'Reference'} <strong>{money(reviewNominal)}</strong></span>{reviewRisk !== null && <span>Risk <strong>{money(reviewRisk)}</strong> ({reviewNominal ? (reviewRisk / reviewNominal * 100).toFixed(2) : '—'}%)</span>}</div><div className="review-actions"><span className="review-note">{review.mode === 'breakout' ? 'Stop execution may differ.' : 'Estimated at review; fill price may differ.'}</span><button type="button" className="button secondary" disabled={sending} onClick={() => setReview(null)}>Back</button><button type="button" className={`button primary ${review.mode === 'market' && review.side === 'sell' ? 'sell-primary' : ''}`} disabled={writing || unavailable} onClick={() => void sendOrder()}>{sending ? 'Sending…' : 'Confirm & Send'}<Icon name="arrow" size={13} /></button></div></div> : <>
           <div className="control-row quantity-row"><label htmlFor="qty">Qty</label><input ref={qtyInput} className="value-input" id="qty" aria-label="Quantity" inputMode="numeric" autoComplete="off" value={qty} onChange={event => editQuantity(event.target.value)} placeholder="0" /><div className="unit-control" aria-label="Quantity unit">{([10, 100, 1000] as const).map(option => <button type="button" key={option} aria-label={`Unit ${option}`} aria-pressed={unit === option} className={unit === option ? 'selected' : ''} onClick={() => { setUnit(option); if (!qty) editQuantity(String(option)) }}>{option === 1000 ? '1k' : option}</button>)}</div><Ruler label="Quantity ruler" value={qty} step={String(unit / 2)} onChange={editQuantity} disabled={!symbol || quoteLoading || writing} quantity limit={currentPrice && (mode === 'breakout' || side === 'buy') ? BUY_LIMIT / currentPrice : undefined} />{mode === 'market' && side === 'sell' ? <button className="text-button ruler-meta" type="button" disabled={!heldQty || heldQty < 1} onClick={() => editQuantity(String(Math.floor(heldQty!)))}>All</button> : <span className="ruler-meta" title="Shares per minor tick">{unit / 2}/tick</span>}</div>
-          {mode === 'breakout' && <><div className="control-row price-row"><label htmlFor="buy-stop">Buy</label><input className="value-input" id="buy-stop" aria-label="Buy stop" inputMode="decimal" autoComplete="off" value={buyStop} onChange={event => setBuyStop(event.target.value)} placeholder="0.00" disabled={quoteLoading && !quote} /><Ruler label="Buy price ruler" value={buyStop} step={tick} disabled={!quote || !validPrice(buyStop) || quoteLoading || writing} onChange={setBuyStop} /><button type="button" className={`text-button ruler-meta ${fine ? 'fine-active' : ''}`} disabled={autoTick === smallestTick} onClick={() => setFine(previous => !previous)} aria-label="Toggle fine price ticks" aria-pressed={fine} title="Toggle fine adjustment">{tick}/tick</button><button type="button" className="icon-button reset-button" aria-label="Reset buy price" disabled={!quote?.suggested_buy_stop || quoteLoading} onClick={() => setBuyStop(quote?.suggested_buy_stop ?? '')}><Icon name="refresh" size={12} /></button></div><div className="control-row price-row"><label htmlFor="sell-stop">Stop</label><input className="value-input" id="sell-stop" aria-label="Sell stop" inputMode="decimal" autoComplete="off" value={sellStop} onChange={event => setSellStop(event.target.value)} placeholder="0.00" disabled={quoteLoading && !quote} /><Ruler label="Stop price ruler" value={sellStop} step={tick} disabled={!quote || !validPrice(sellStop) || quoteLoading || writing} onChange={setSellStop} /><span className="ruler-meta">{tick}/tick</span><button type="button" className="icon-button reset-button" aria-label="Reset stop price" disabled={!quote?.suggested_sell_stop || quoteLoading} onClick={() => setSellStop(quote?.suggested_sell_stop ?? '')}><Icon name="refresh" size={12} /></button></div></>}
+          {mode === 'breakout' && <><div className="control-row price-row"><label htmlFor="buy-stop">Buy</label><input className="value-input" id="buy-stop" aria-label="Buy stop" inputMode="decimal" autoComplete="off" value={buyStop} onChange={event => setBuyStop(event.target.value)} placeholder="—" disabled={quoteLoading && !quote} /><Ruler label="Buy price ruler" value={buyStop} step={tick} disabled={!quote || !validPrice(buyStop) || quoteLoading || writing} onChange={setBuyStop} /><button type="button" className={`text-button ruler-meta ${fine ? 'fine-active' : ''}`} disabled={autoTick === smallestTick} onClick={() => setFine(previous => !previous)} aria-label="Toggle fine price ticks" aria-pressed={fine} title="Toggle fine adjustment">{tick}/tick</button><button type="button" className="icon-button reset-button" aria-label="Reset buy price" disabled={!quoteDefaults(quote).buy || quoteLoading} onClick={() => { const defaults = quoteDefaults(quote); setBuyStop(defaults.buy); setDefaultNote(defaults.note) }}><Icon name="refresh" size={12} /></button></div><div className="control-row price-row"><label htmlFor="sell-stop">Stop</label><input className="value-input" id="sell-stop" aria-label="Sell stop" inputMode="decimal" autoComplete="off" value={sellStop} onChange={event => setSellStop(event.target.value)} placeholder="—" disabled={quoteLoading && !quote} /><Ruler label="Stop price ruler" value={sellStop} step={tick} disabled={!quote || !validPrice(sellStop) || quoteLoading || writing} onChange={setSellStop} /><span className="ruler-meta">{tick}/tick</span><button type="button" className="icon-button reset-button" aria-label="Reset stop price" disabled={!quoteDefaults(quote).stop || quoteLoading} onClick={() => { const defaults = quoteDefaults(quote); setSellStop(defaults.stop); setDefaultNote(defaults.note) }}><Icon name="refresh" size={12} /></button></div></>}
           <div className="ticket-summary"><div><span>Est <strong>{money(nominal)}</strong></span>{risk !== null && <span className="risk-summary">Risk <strong>{money(risk)}</strong> {nominal && risk >= 0 ? `${(risk / nominal * 100).toFixed(2)}%` : ''}</span>}{mode === 'market' && stops.length > 0 && <span className="existing-stop" title={stops.map(stop => `${quantity(stop.quantity)} @ ${price(stop.stop_price)}`).join('; ')}><Icon name="shield" size={11} />{stops.length === 1 ? `Stop ${price(stops[0].stop_price)}` : `${stops.length} stops`}</span>}</div><button type="submit" className="button primary" disabled={writing || unavailable || quoteLoading || !symbol || !qty || !!issue}>Review<Icon name="arrow" size={13} /></button></div>{issue && <div className="limit-note" role="status"><Icon name="alert" size={12} />{issue}</div>}
         </>}
       </form><ErrorLine error={tradeError} onRefresh={manualRefreshOrders} />

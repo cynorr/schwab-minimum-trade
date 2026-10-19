@@ -21,6 +21,7 @@ export interface Position {
   average_price: Decimal
   market_value: Decimal
   day_profit_loss: Decimal
+  open_profit_loss: Decimal
   day_profit_loss_percent: Decimal
 }
 
@@ -57,6 +58,8 @@ export interface Quote {
   ask: Decimal
   day_high: Decimal
   day_low: Decimal
+  last_price: Decimal
+  close_price: Decimal
   suggested_buy_stop: Decimal
   suggested_sell_stop: Decimal
   updated_at: string

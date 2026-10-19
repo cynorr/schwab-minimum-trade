@@ -26,6 +26,10 @@
 
 约定范围：每单几秒内全部成交；不处理跨日分批成交、部分成交后撤单；止损单最多两周更新，位于现有 59 天创建时间查询窗口内。
 
+## 已完成：报价降级与持仓浮盈
+
+Quote 保持原有 `fields=quote`，只映射已收到的 lastPrice、closePrice 为 last_price、close_price；前端按纽约时钟及有效 High/Low 逐级降级，无额外数据组、新 Endpoint 或新增请求。Positions/SSE 新增 open_profit_loss，直接映射 longOpenProfitLoss，前端同时展示浮盈和当日盈亏及百分比，不依赖历史订单。
+
 ## P1：只读风控配置
 
 建议返回当前生效的 `max_order_amount_usd`、`max_loss_per_trade_usd`、`max_stop_loss_ratio`，供前端展示和预检，后端继续最终校验。

@@ -12,10 +12,12 @@ export const health: Health = {
 export const position: Position = {
   symbol: 'NVDA', asset_type: 'EQUITY', quantity: '100.5', average_price: '135.00',
   market_value: '14050', day_profit_loss: '210', day_profit_loss_percent: '1.5',
+  open_profit_loss: '482.50',
 }
 export const quote: Quote = {
   symbol: 'NVDA', bid: '140.20', ask: '140.22', day_low: '136.20', day_high: '140.50',
   suggested_buy_stop: '140.51', suggested_sell_stop: '136.20', updated_at: now,
+  last_price: '140.21', close_price: '138',
 }
 export function order(overrides: Partial<OrderItem> = {}): OrderItem {
   return {

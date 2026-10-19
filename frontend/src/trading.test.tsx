@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Ruler } from './Ruler'
-import { offsetDecimal, priceTick, quantityUnit, ticketIssue } from './trading'
+import { offsetDecimal, priceTick, quoteDefaults, quantityUnit, ticketIssue } from './trading'
 import { quote } from './test/fixtures'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
@@ -41,20 +41,31 @@ describe('ruler arithmetic and risk checks', () => {
     fireEvent.keyDown(slider, { key: 'Home' })
     expect(slider.getAttribute('aria-valuenow')).toBe('1')
   })
-  it('only changes the price after an intentional horizontal drag, not a click or vertical gesture', () => {
-    vi.stubGlobal('PointerEvent', MouseEvent)
+  it('moves the thumb on a fixed scale and preserves the scale after repeated changes', () => {
     function Control() { const [value, setValue] = useState('140.51'); return <Ruler label="Buy ruler" value={value} step="0.01" onChange={setValue} /> }
     render(<Control />)
     const slider = screen.getByRole('slider')
-    fireEvent.pointerDown(slider, { clientX: 100, clientY: 10 })
-    fireEvent.pointerUp(slider, { clientX: 100, clientY: 10 })
-    expect(slider.getAttribute('aria-valuenow')).toBe('140.51')
-    fireEvent.pointerDown(slider, { clientX: 100, clientY: 10 })
-    fireEvent.pointerMove(slider, { clientX: 99, clientY: 30 })
-    expect(slider.getAttribute('aria-valuenow')).toBe('140.51')
-    fireEvent.pointerDown(slider, { clientX: 100, clientY: 10 })
-    fireEvent.pointerMove(slider, { clientX: 82, clientY: 10 })
-    fireEvent.pointerUp(slider, { clientX: 82, clientY: 10 })
+    const scale = [slider.getAttribute('min'), slider.getAttribute('max')]
+    const labels = [...document.querySelectorAll('.ruler-tick')].map(tick => tick.textContent)
+    fireEvent.change(slider, { target: { value: '140.53' } })
     expect(slider.getAttribute('aria-valuenow')).toBe('140.53')
+    fireEvent.change(slider, { target: { value: '140.45' } })
+    expect(slider.getAttribute('aria-valuenow')).toBe('140.45')
+    expect([slider.getAttribute('min'), slider.getAttribute('max')]).toEqual(scale)
+    expect([...document.querySelectorAll('.ruler-tick')].map(tick => tick.textContent)).toEqual(labels)
+  })
+  it('selects defaults by New York session and falls back to positive available prices', () => {
+    expect(quoteDefaults(quote, new Date('2026-10-15T19:00:00Z'))).toMatchObject({ buy: '140.51', stop: '136.20', note: '' })
+    const premarket = quoteDefaults(quote, new Date('2026-10-15T12:00:00Z'))
+    expect(premarket).toMatchObject({ buy: '140.22', stop: '140.20' })
+    expect(premarket.note).toContain('Ask')
+    expect(quoteDefaults({ ...quote, ask: null, bid: '0' }, new Date('2026-10-18T14:00:00Z'))).toMatchObject({ buy: '140.21', stop: '140.21' })
+    expect(quoteDefaults({ ...quote, ask: null, bid: null, last_price: '0' }, new Date('2026-10-18T14:00:00Z'))).toMatchObject({ buy: '138', stop: '138' })
+    expect(quoteDefaults({ ...quote, ask: null, bid: null, last_price: null, close_price: null }, new Date('2026-10-18T14:00:00Z'))).toMatchObject({ buy: '', stop: '' })
+    expect(quoteDefaults(quote, new Date('2026-10-15T13:30:00Z')).buy).toBe('140.51')
+    expect(quoteDefaults(quote, new Date('2026-10-15T20:00:00Z')).buy).toBe('140.22')
+    expect(quoteDefaults(quote, new Date('2026-12-01T14:00:00Z')).buy).toBe('140.22')
+    expect(quoteDefaults(quote, new Date('2026-12-01T14:30:00Z')).buy).toBe('140.51')
+    expect(quoteDefaults({ ...quote, day_high: '0', day_low: null }, new Date('2026-10-15T19:00:00Z'))).toMatchObject({ buy: '140.22', stop: '140.20' })
   })
 })

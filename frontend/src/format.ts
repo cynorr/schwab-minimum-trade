@@ -22,6 +22,13 @@ export function price(value: Decimal | number | undefined): string {
   }).format(parsed)
 }
 
+export function wholeMoney(value: Decimal | number | undefined): string {
+  const parsed = number(value)
+  return parsed === null ? '—' : new Intl.NumberFormat('en-US', {
+    style: 'currency', currency: 'USD', maximumFractionDigits: 0,
+  }).format(Math.trunc(parsed))
+}
+
 export function quantity(value: Decimal | number | undefined): string {
   const parsed = number(value)
   return parsed === null ? '—' : new Intl.NumberFormat('en-US', { maximumFractionDigits: 6 }).format(parsed)

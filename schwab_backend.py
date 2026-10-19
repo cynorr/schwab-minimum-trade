@@ -616,6 +616,7 @@ def map_account(raw: dict, updated_at: str) -> tuple[dict, list]:
                 "average_price": decimal_text(position.get("averagePrice")),
                 "market_value": decimal_text(position.get("marketValue")),
                 "day_profit_loss": decimal_text(position.get("currentDayProfitLoss")),
+                "open_profit_loss": decimal_text(position.get("longOpenProfitLoss")),
                 "day_profit_loss_percent": decimal_text(
                     position.get("currentDayProfitLossPercentage")
                 ),
@@ -827,6 +828,8 @@ class Runtime:
                 "ask": decimal_text(values.get("askPrice")),
                 "day_high": decimal_text(values.get("highPrice")),
                 "day_low": decimal_text(values.get("lowPrice")),
+                "last_price": decimal_text(values.get("lastPrice")),
+                "close_price": decimal_text(values.get("closePrice")),
                 "updated_at": utc_now(),
             }
         self.state.subscribed_symbols.add(symbol)
@@ -849,6 +852,8 @@ class Runtime:
             "ask": stream.get("ask", quote["ask"]),
             "day_high": quote["day_high"],
             "day_low": quote["day_low"],
+            "last_price": quote["last_price"],
+            "close_price": quote["close_price"],
             "suggested_buy_stop": decimal_text(high + BREAKOUT_OFFSET) if high else None,
             "suggested_sell_stop": decimal_text(low),
             "updated_at": stream.get("updated_at", quote["updated_at"]),

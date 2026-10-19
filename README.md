@@ -73,7 +73,9 @@ curl -N http://127.0.0.1:5678/api/v1/events
 
 价格、金额和查询数量返回十进制字符串；下单数量必须为 JSON 正整数，价格输入必须为字符串。拒绝未定义字段。写请求的浏览器 Origin 必须匹配配置；没有 Origin 的本机 CLI 可直接调用。POST/PUT 需要 `Content-Type: application/json`。
 
-账户余额新增 `available_funds`（`currentBalances.availableFunds`）、`intraday_buying_power`（`currentBalances.intradayBuyingPowerAmount`）和 `stock_buying_power`（`projectedBalances.stockBuyingPower`）。保留旧的 `buying_power`、`day_trading_buying_power` 原始含义；缺失字段为 null，不按倍数换算或互相替代。后端保留 Cash Balance 与 Margin Balance 原值；前端合成为 Balance，悬停可查看组成。顶部顺序为 Net Liq、Stock BP、Intraday BP、Available Dollars、Balance；Long Value 位于 Holdings 末行汇总。负数使用负号，无风险颜色。
+账户余额新增 `available_funds`（`currentBalances.availableFunds`）、`intraday_buying_power`（`currentBalances.intradayBuyingPowerAmount`）和 `stock_buying_power`（`projectedBalances.stockBuyingPower`）。保留旧的 `buying_power`、`day_trading_buying_power` 原始含义；缺失字段为 null，不按倍数换算或互相替代。后端保留 Cash Balance 与 Margin Balance 原值；前端合成为 Balance，悬停可查看组成。顶部顺序为 Net Liq、Stock BP、Intraday BP、Available Dollars、Balance；Long Value 位于 Holdings 末行并与 Value 列对齐。顶部和 Long Value 仅显示整数部分，API 精度保持不变。负数使用负号，无风险颜色。
+
+Positions 新增 `open_profit_loss`，直接映射 `longOpenProfitLoss`。Holdings 同时展示持仓浮盈和当日盈亏及百分比；持仓百分比由浮盈除以平均价乘股数计算，不拼接历史订单。Quote 仅新增 `last_price`、`close_price` 的原值映射，保持原有 `fields=quote` 请求不变；前端按纽约工作日 09:30–16:00 和正值 High/Low 选择默认价，其他时间或缺失时逐步降级为 Ask/Bid、Last、Close，显示来源，全部缺失留空。
 
 Orders 的每个订单（包括 OTO 子单）新增 `executions` 数组，无成交时为 `[]`。每笔包含 `activity_id`、`leg_id`、`quantity`、`price`、`time`；数量与价格为十进制字符串，时间为 UTC ISO 8601。`GET /orders`、`GET /orders/{id}` 和 SSE `snapshot_updated.orders` 共用此结构，仍为 12 个业务接口。
 
@@ -105,8 +107,9 @@ npm run dev
 
 打开 `http://127.0.0.1:3000`。开发与预览均固定该地址；端口被占用时直接报错。接口直接连接 `http://127.0.0.1:5678/api/v1`，不需要前端配置凭据。
 
-- 输入股票代码后按 Enter 查询；刷新按钮强制刷新行情；点击持仓会带入代码和整股数量。同一标的刷新不会覆盖已编辑的触发价，可点击「重置建议价」恢复。
+- 按 `/` 清空并聚焦搜索；输入股票代码后按 Enter 查询；刷新按钮强制刷新行情；点击持仓会带入代码和整股数量。同一标的刷新不会覆盖已编辑的触发价，可点击「重置建议价」恢复。
 - 突破买入、市价买入和市价卖出均先核对，再点击 `Confirm & Send` 发送；成功表示请求已接受，等待券商同步。改止损和撤单直接发送。
+- 标尺刻度固定、滑块移动，可点击或拖动；所有买单/止损直接展开，保留未激活状态。
 - 下方列表分为 Entries、Holdings、Sold Today；成交明细点击展开，时间显示 ET。
 - 页面通过四种命名 SSE 事件同步快照、报价、连接和成交提示，并每 5 秒读取健康状态以识别授权失效和恢复。SSE 自动重连，保留最后快照；前端不播放声音。
 - 写请求超时、断线或返回 `ORDER_RESULT_UNKNOWN` 时常驻显示琥珀色提示，不自动重发。请先在 Schwab 人工核对；「刷新订单」只读取订单，不代表原交易结果已确认。
