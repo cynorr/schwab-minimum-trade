@@ -2,8 +2,9 @@ import type { Quote, Ticket } from './api'
 import { number, validPrice } from './format'
 
 // Mirrors the existing backend configuration; this never changes broker limits.
-export const BUY_LIMIT = 20_000
-export const LOSS_LIMIT = 500
+export const BUY_LIMIT = 45_000
+export const LOSS_LIMIT = 2_000
+export const STOP_DISTANCE_PERCENT = 15
 export type QuantityUnit = 10 | 100 | 1000
 
 export function quantityUnit(reference: number): QuantityUnit {
@@ -51,14 +52,14 @@ export function ticketIssue(ticket: Ticket, quote: Quote | null, held: number | 
   }
   const buyPrice = ticket.mode === 'breakout' ? ticket.buy_stop : quote?.ask
   if (!buyPrice || !validPrice(buyPrice)) return 'A valid buy price is required.'
-  if (productExceeds(ticket.qty, buyPrice, BUY_LIMIT)) return 'Above the $20,000 buy limit.'
+  if (productExceeds(ticket.qty, buyPrice, BUY_LIMIT)) return 'Above the $45,000 buy limit.'
   if (ticket.mode === 'market') return null
   if (!validPrice(ticket.sell_stop)) return 'Enter a positive stop price.'
   const scale = Math.max(parts(buyPrice).scale, parts(ticket.sell_stop).scale)
   const buy = scaled(buyPrice, scale), stop = scaled(ticket.sell_stop, scale)
   if (stop >= buy) return 'Stop must be below the buy price.'
-  if ((buy - stop) * 10n > buy) return 'Stop distance exceeds 10%.'
-  if (BigInt(ticket.qty) * (buy - stop) > BigInt(LOSS_LIMIT) * 10n ** BigInt(scale)) return 'Above the $500 estimated risk limit.'
+  if ((buy - stop) * 100n > buy * BigInt(STOP_DISTANCE_PERCENT)) return 'Stop distance exceeds 15%.'
+  if (BigInt(ticket.qty) * (buy - stop) > BigInt(LOSS_LIMIT) * 10n ** BigInt(scale)) return 'Above the $2,000 estimated risk limit.'
   const ask = number(quote?.ask), bid = number(quote?.bid)
   if (ask !== null && Number(buyPrice) <= ask) return 'Buy stop must be above Ask.'
   if (bid !== null && Number(ticket.sell_stop) >= bid) return 'Sell stop must be below Bid.'

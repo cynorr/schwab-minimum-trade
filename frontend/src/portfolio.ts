@@ -7,6 +7,8 @@ export interface SoldSymbol {
   quantity: number
   amount: number
   averagePrice: number
+  boughtQuantity: number | null
+  averageBuyPrice: number | null
   occurredAt: string
   executions: (Execution & { order_id: string })[]
 }
@@ -28,25 +30,35 @@ export function tradingDay(value: string | Date = new Date()): string {
 
 export function soldToday(orders: OrderItem[], day = tradingDay()): SoldSymbol[] {
   const result = new Map<string, SoldSymbol>()
+  const buys = new Map<string, { quantity: number; amount: number }>()
   const seen = new Set<string>()
   for (const order of flattenOrders(orders)) {
-    if (!order.order_id || !order.symbol || order.instruction !== 'SELL' || order.status !== 'FILLED' || seen.has(order.order_id)) continue
+    if (!order.order_id || !order.symbol || !['BUY', 'SELL'].includes(order.instruction ?? '') || order.status !== 'FILLED' || seen.has(order.order_id)) continue
     seen.add(order.order_id)
     const qty = number(order.filled_quantity)
     if (!qty || !order.executions.length) continue
     const occurredAt = order.executions.reduce((latest, execution) => Date.parse(execution.time) > Date.parse(latest) ? execution.time : latest, order.executions[0].time)
     if (tradingDay(occurredAt) !== day) continue
     const amount = order.executions.reduce((sum, execution) => sum + Number(execution.quantity) * Number(execution.price), 0)
+    if (order.instruction === 'BUY') {
+      const previous = buys.get(order.symbol)
+      buys.set(order.symbol, { quantity: (previous?.quantity ?? 0) + qty, amount: (previous?.amount ?? 0) + amount })
+      continue
+    }
     const previous = result.get(order.symbol)
     const totalQuantity = (previous?.quantity ?? 0) + qty
     const totalAmount = (previous?.amount ?? 0) + amount
     result.set(order.symbol, {
       symbol: order.symbol, quantity: totalQuantity, amount: totalAmount, averagePrice: totalAmount / totalQuantity,
+      boughtQuantity: null, averageBuyPrice: null,
       occurredAt: previous && Date.parse(previous.occurredAt) > Date.parse(occurredAt) ? previous.occurredAt : occurredAt,
       executions: [...(previous?.executions ?? []), ...order.executions.map(execution => ({ ...execution, order_id: order.order_id! }))],
     })
   }
-  return [...result.values()].sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))
+  return [...result.values()].map(row => {
+    const buy = buys.get(row.symbol)
+    return { ...row, boughtQuantity: buy?.quantity ?? null, averageBuyPrice: buy ? buy.amount / buy.quantity : null }
+  }).sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))
 }
 
 export function portfolioSections(positions: Position[], orders: OrderItem[]) {

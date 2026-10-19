@@ -50,4 +50,13 @@ describe('symbol-based sections', () => {
     expect(soldToday([order({ ...first, instruction: 'BUY' }), order({ ...second, status: 'WORKING' })], '2026-10-15')).toEqual([])
     expect(soldToday([order({ ...first, executions: [] })], '2026-10-15')).toEqual([])
   })
+  it('shows weighted actual buys for the same trading day, without treating earlier purchases as cost basis', () => {
+    const fill = { activity_id: '1', leg_id: '1', quantity: '10', price: '100', time: '2026-10-15T14:00:00Z' }
+    const buy = order({ order_id: '101', instruction: 'BUY', status: 'FILLED', filled_quantity: '10', executions: [fill] })
+    const secondBuy = order({ ...buy, order_id: '103', filled_quantity: '20', executions: [{ ...fill, quantity: '20', price: '106' }] })
+    const sale = order({ order_id: '104', status: 'FILLED', filled_quantity: '10', executions: [{ ...fill, price: '110', time: '2026-10-15T15:00:00Z' }] })
+    const previousBuy = order({ ...buy, order_id: '100', executions: [{ ...fill, price: '80', time: '2026-10-14T15:00:00Z' }] })
+    expect(soldToday([buy, sale, secondBuy, buy, previousBuy], '2026-10-15')[0]).toMatchObject({ boughtQuantity: 30, averageBuyPrice: 104, quantity: 10, averagePrice: 110 })
+    expect(soldToday([previousBuy, sale], '2026-10-15')[0]).toMatchObject({ boughtQuantity: null, averageBuyPrice: null })
+  })
 })

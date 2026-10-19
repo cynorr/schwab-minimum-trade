@@ -111,7 +111,7 @@ describe('compact trading workspace', () => {
     expect(within(balances).queryByText('$75,000.00')).toBe(null)
     expect(within(balances).queryByText('Long Value')).toBe(null)
     const holdings = screen.getByRole('region', { name: 'Holdings' })
-    const total = holdings.lastElementChild!
+    const total = within(holdings).getByLabelText('Holdings total')
     expect(total.getAttribute('aria-label')).toBe('Holdings total')
     expect(total.textContent).toBe('Long Value$86,000')
     expect(total.getAttribute('title')).toBe('currentBalances.longMarketValue')
@@ -158,7 +158,7 @@ describe('compact trading workspace', () => {
     await ready()
     quoteVersion = { ...quote, ask, suggested_buy_stop: ask }
     fireEvent.change(screen.getByLabelText('Symbol'), { target: { value: symbol } })
-    fireEvent.click(screen.getByRole('button', { name: 'Load symbol' }))
+    fireEvent.submit(screen.getByLabelText('Symbol').closest('form')!)
     await waitFor(() => expect((screen.getByLabelText('Quantity') as HTMLInputElement).value).toBe(expected))
     fireEvent.keyDown(screen.getByRole('slider', { name: 'Quantity ruler' }), { key: 'ArrowRight' })
     expect((screen.getByLabelText('Quantity') as HTMLInputElement).value).toBe(String(Number(expected) + Number(half)))
@@ -183,17 +183,30 @@ describe('compact trading workspace', () => {
     expect((screen.getByLabelText('Quantity') as HTMLInputElement).value).toBe('')
   })
 
-  it('shows the existing $20k buy cap without silently reducing a 100-share default', async () => {
+  it('allows $25k buys and risks above $500, while enforcing the new limits without changing quantity', async () => {
     await ready()
-    quoteVersion = { ...quote, ask: '249.98', bid: '249.97', suggested_buy_stop: '250', suggested_sell_stop: '248' }
+    quoteVersion = { ...quote, ask: '249.98', bid: '249.97', suggested_buy_stop: '250', suggested_sell_stop: '240' }
     fireEvent.change(screen.getByLabelText('Symbol'), { target: { value: 'HIGH' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Load symbol' }))
-    await screen.findByText('Above the $20,000 buy limit.')
-    expect((screen.getByLabelText('Quantity') as HTMLInputElement).value).toBe('100')
-    expect((screen.getByRole('button', { name: 'Review' }) as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.keyDown(screen.getByRole('slider', { name: 'Quantity ruler' }), { key: 'ArrowLeft' })
-    expect((screen.getByLabelText('Quantity') as HTMLInputElement).value).toBe('50')
-    expect((screen.getByRole('button', { name: 'Review' }) as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.submit(screen.getByLabelText('Symbol').closest('form')!)
+    await waitFor(() => expect((screen.getByLabelText('Buy stop') as HTMLInputElement).value).toBe('250'))
+    const qty = screen.getByLabelText('Quantity') as HTMLInputElement
+    const review = () => screen.getByRole('button', { name: 'Review' }) as HTMLButtonElement
+    expect(qty.value).toBe('100')
+    expect(review().disabled).toBe(false)
+    fireEvent.change(qty, { target: { value: '180' } })
+    expect(review().disabled).toBe(false)
+    fireEvent.change(qty, { target: { value: '181' } })
+    expect(screen.getByText('Above the $45,000 buy limit.')).toBeTruthy()
+    expect(qty.value).toBe('181')
+    expect(review().disabled).toBe(true)
+    fireEvent.change(qty, { target: { value: '100' } })
+    fireEvent.change(screen.getByLabelText('Sell stop'), { target: { value: '229.99' } })
+    expect(screen.getByText('Above the $2,000 estimated risk limit.')).toBeTruthy()
+    fireEvent.change(qty, { target: { value: '1' } })
+    fireEvent.change(screen.getByLabelText('Sell stop'), { target: { value: '212.49' } })
+    expect(screen.getByText('Stop distance exceeds 15%.')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Sell stop'), { target: { value: '212.50' } })
+    expect(review().disabled).toBe(false)
     expect(writes).toHaveLength(0)
   })
 
@@ -253,18 +266,21 @@ describe('compact trading workspace', () => {
     orders = [...orders, sold]
     await ready()
     const sales = () => within(screen.getByRole('region', { name: 'Sold Today' }))
-    expect(sales().getByText('$4,206.00')).toBeTruthy()
-    fireEvent.click(sales().getByLabelText('NVDA sell executions'))
-    expect(sales().getByText('Order #999 · Activity #25 · Leg 1')).toBeTruthy()
+    expect(sales().getByText('$4,206')).toBeTruthy()
+    expect(sales().getByRole('columnheader', { name: 'Sold Avg' })).toBeTruthy()
+    expect(sales().getByText('140.20')).toBeTruthy()
+    expect(sales().getByLabelText('NVDA buys and sales').querySelectorAll('td')[1].textContent).toBe('—')
+    expect(sales().queryByText(/Order #|Activity #|Leg |Last \(ET\)/)).toBe(null)
+    expect(screen.getByRole('region', { name: 'Sold Today' }).querySelector('details')).toBe(null)
     source().emit('order_filled', { symbol: 'NVDA', order_id: '999', occurred_at: filledAt })
     source().emit('snapshot_updated', { account, positions: [], orders: [sold], updated_at: filledAt })
-    expect(sales().getAllByText('$4,206.00')).toHaveLength(1)
+    expect(sales().getAllByText('$4,206')).toHaveLength(1)
     source().emit('snapshot_updated', { account, positions: [position], orders: [sold], updated_at: filledAt })
-    expect(sales().getByText('$4,206.00')).toBeTruthy()
+    expect(sales().getByText('$4,206')).toBeTruthy()
     expect(within(screen.getByRole('region', { name: 'Holdings' })).getByRole('button', { name: 'Select NVDA' })).toBeTruthy()
     cleanup()
     await ready()
-    expect(sales().getByText('$4,206.00')).toBeTruthy()
+    expect(sales().getByText('$4,206')).toBeTruthy()
     expect(writes).toEqual([])
   })
 
@@ -280,6 +296,35 @@ describe('compact trading workspace', () => {
     expect(quoteCalls).toHaveLength(1)
   })
 
+  it('shows only the search icon and placeholder, hiding the placeholder immediately on focus', async () => {
+    await ready()
+    const field = screen.getByLabelText('Symbol') as HTMLInputElement
+    expect(field.placeholder).toBe('Symbol')
+    expect(field.closest('form')!.querySelectorAll('button')).toHaveLength(0)
+    fireEvent.focus(field)
+    expect(field.placeholder).toBe('')
+    expect(quoteCalls).toHaveLength(0)
+    fireEvent.blur(field)
+    expect(field.placeholder).toBe('Symbol')
+    fireEvent.keyDown(document, { key: '/' })
+    expect(document.activeElement).toBe(field)
+    expect(field.placeholder).toBe('')
+    expect(quoteCalls).toHaveLength(0)
+  })
+
+  it('flattens current-day buy and sell quantities and prices without exposing execution metadata', async () => {
+    const fill = { activity_id: '25', leg_id: '1', quantity: '30', price: '140.205', time: now }
+    orders = [
+      order({ order_id: '998', instruction: 'BUY', status: 'FILLED', filled_quantity: '30', executions: [{ ...fill, price: '135.125' }] }),
+      order({ order_id: '999', status: 'FILLED', filled_quantity: '30', executions: [fill] }),
+    ]
+    await ready()
+    const row = screen.getByLabelText('NVDA buys and sales')
+    expect([...row.querySelectorAll('td')].map(cell => cell.textContent)).toEqual(['NVDA', '30', '135.13', '30', '140.21', '$4,206'])
+    expect(row.textContent).not.toMatch(/998|999|Activity|Leg|19:00/)
+    expect(writes).toHaveLength(0)
+  })
+
   it('focuses and clears symbol search with slash, without fetching or changing a frozen review', async () => {
     await ready(); await selectNvda()
     const field = screen.getByLabelText('Symbol') as HTMLInputElement
@@ -287,6 +332,7 @@ describe('compact trading workspace', () => {
     fireEvent.keyDown(document.activeElement!, { key: '/' })
     expect(document.activeElement).toBe(field)
     expect(field.value).toBe('')
+    expect(field.placeholder).toBe('')
     expect(quoteCalls).toHaveLength(1)
     fireEvent.change(field, { target: { value: 'NVDA' } })
     fireEvent.click(screen.getByRole('button', { name: 'Review' }))
@@ -295,14 +341,16 @@ describe('compact trading workspace', () => {
     expect(field.disabled).toBe(true)
   })
 
-  it('shows native open and daily P/L amounts and percentages without joining orders', async () => {
+  it('lays out native open and daily P/L in separate single-line cells with compact precision', async () => {
     orders = []
     await ready()
     const holdings = screen.getByRole('region', { name: 'Holdings' })
-    expect(within(holdings).getByText('+$482.50')).toBeTruthy()
-    expect(within(holdings).getByText('+3.56%')).toBeTruthy()
-    expect(within(holdings).getByText('+$210.00')).toBeTruthy()
-    expect(within(holdings).getByText('+1.50%')).toBeTruthy()
+    const pnl = within(holdings).getByText('+$483')
+    expect(pnl.tagName).toBe('TD')
+    expect(pnl.parentElement!.querySelectorAll('td')).toHaveLength(9)
+    expect(within(holdings).getByText('+3.6%')).toBeTruthy()
+    expect(within(holdings).getByText('+$210')).toBeTruthy()
+    expect(within(holdings).getByText('+1.5%')).toBeTruthy()
   })
 
   it('does not expose cancel/replace without IDs or replace a pending child stop', async () => {

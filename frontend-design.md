@@ -34,7 +34,7 @@ Net Liq | Stock BP | Intraday BP | Available Dollars | Balance
 ┌─────────────────────────────────────────────────────────┐
 │ Entries：待成交买单与关联止损                            │
 │ Holdings：持仓与行内止损操作，末行 Long Value 汇总        │
-│ Sold Today：当日卖出汇总，可展开逐笔成交                  │
+│ Sold Today：单行平铺当日 Buy / Sold 数量及均价                  │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -54,6 +54,8 @@ Net Liq | Stock BP | Intraday BP | Available Dollars | Balance
 3.2 固定交易区：交易面板卡片（Trade Ticket Card）
 
 A. 标的查询与实时报价胶囊（按需触发）
+
+搜索框仅保留搜索图标和 Symbol 占位文字；点击或按 / 聚焦后立即隐藏占位文字，Enter 提交，不显示快捷键符号。前后端统一买入限额 $45,000、估算损失限额 $2,000、止损距离上限 15%，保留对应限制提示。
 
 ⚬ 触发时机：严禁在输入字母时逐字触发请求。按 `/` 清空并聚焦搜索，确认和发送期间保持输入锁定；仅在以下 3 种操作时调用 GET /api/v1/quotes/{symbol}：
   1. 在 Symbol 胶囊框输入代码后按 Enter；
@@ -78,13 +80,13 @@ B. 交易模式与行内确认（Inline Review）
 
 3.3 下方统一列表（Entries / Holdings / Sold Today）
 
-Entries 和 Holdings 每个股票一行，持仓优先；同一股票的多个买单、止损单全部行内展开，操作仍绑定真实订单 ID，但不在普通行展示 ID 或重复价格。Awaiting parent/activation 单独显示简短状态，不能当成 Working；仍不可改单。父单已成交时继续递归提取活动子单，不显示置灰父单占位。Holdings 最后一行汇总直接展示 `long_market_value`，点击股票带入整股持仓数量并查询报价。
+Entries 和 Holdings 每个股票一行，持仓优先；同一股票的多个买单、止损单全部行内展开，操作仍绑定真实订单 ID，但不在普通行展示 ID 或重复价格。Awaiting parent/activation 在同一行显示简短状态，不能当成 Working；仍不可改单。父单已成交时继续递归提取活动子单，不显示置灰父单占位。Holdings 最后一行汇总直接展示 `long_market_value`，点击股票带入整股持仓数量并查询报价。
 
 标尺改为原生 range 控件：刻度固定、滑块移动，点击定位，右移增大，左移减小。方向键每次一格，Shift 两格；手动输入超出当前范围才重设范围，拖动不平移刻度。修改精细度会改变范围和刻度。
 
-P/L 同列两行展示持仓浮盈和当日盈亏，均带百分比。持仓浮盈金额取 longOpenProfitLoss；持仓浮盈百分比为 open_profit_loss / (average_price × quantity) × 100。当日金额和百分比分别取 currentDayProfitLoss、currentDayProfitLossPercentage。不拼接订单推算买入成本。
+所有列表字段禁止双行显示。持仓浮盈、浮盈百分比、当日盈亏、当日百分比平铺为独立列；盈亏金额取整数、百分比保留一位小数。多个订单及等待状态同样保持单行，窄窗口在区域内横向滚动且固定 Symbol 列。持仓浮盈金额取 longOpenProfitLoss；持仓浮盈百分比为 open_profit_loss / (average_price × quantity) × 100。当日金额和百分比分别取 currentDayProfitLoss、currentDayProfitLossPercentage。不拼接订单推算买入成本。
 
-Sold Today 是独立区域，不受持仓是否归零或重新买入影响。递归解析完整订单快照，只统计股票 SELL 且 FILLED 的订单，以最后一笔实际成交时间判断 `America/New_York` 当天。每个股票展示卖出股数、实际成交加权均价、未扣费用总额和最后成交时间（ET）；点击行展开逐笔数量、价格、时间、订单 ID、活动 ID、腿 ID。不展示已实现盈亏。
+Sold Today 是独立区域，不受持仓是否归零或重新买入影响。递归解析完整订单快照，只统计股票 SELL 且 FILLED 的订单，以最后一笔实际成交时间判断 `America/New_York` 当天。每个股票单行分列展示 Buy Qty、Buy Avg、Sold Qty、Sold Avg、Proceeds；买入只汇总同一美东交易日完全成交的 BUY 订单，没有记录显示 —，不当作已匹配的成本。买卖均价显示两位小数，卖出总额四舍五入取整数；不显示内部订单/活动/腿编号、不显示时间列、不展开明细。不展示已实现盈亏。
 
 成交明细来自现有 GET Orders 和 SSE 快照内的 `executions` 数组；重载及断线恢复不依赖实时成交提示事件。保留相同数量/价格/时间的不同成交，仅按订单 ID 去除订单树中重复出现的订单。无明细不猜测成交价或成交时间。
 

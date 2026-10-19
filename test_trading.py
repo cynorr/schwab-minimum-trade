@@ -311,7 +311,7 @@ async def test_breakout_native_oto_one_post(setup):
     [
         (1, "101", "101"),
         (1, "101", "102"),
-        (1, "101", "90"),
+        (1, "101", "85"),
         (100, "101", "95"),
         (1, "100", "95"),
         (1, "101", "100"),
@@ -331,6 +331,51 @@ async def test_loss_limit_and_exact_ratio_boundary(setup, monkeypatch):
         await runtime.trading.buy_breakout("NVDA", 1, Decimal("110"), Decimal("99"))
     monkeypatch.setattr(backend, "MAX_LOSS_PER_TRADE_USD", Decimal("11"))
     await runtime.trading.buy_breakout("NVDA", 1, Decimal("110"), Decimal("99"))
+    assert len(broker.writes()) == 1
+
+
+def test_default_trading_limits():
+    assert backend.MAX_ORDER_AMOUNT_USD == Decimal("45000")
+    assert backend.MAX_LOSS_PER_TRADE_USD == Decimal("2000")
+    assert backend.MAX_STOP_LOSS_RATIO == Decimal("0.15")
+
+
+@pytest.mark.parametrize(
+    "qty,buy,sell,accepted",
+    [
+        (100, "450", "440", True),
+        (100, "450.0001", "440", False),
+        (100, "300", "280", True),
+        (100, "300", "279.9999", False),
+        (10, "200", "170", True),
+        (10, "200", "169.9999", False),
+    ],
+)
+async def test_updated_breakout_limit_boundaries(setup, monkeypatch, qty, buy, sell, accepted):
+    runtime, broker, _ = setup
+    monkeypatch.setattr(backend, "MAX_ORDER_AMOUNT_USD", Decimal("45000"))
+    monkeypatch.setattr(backend, "MAX_LOSS_PER_TRADE_USD", Decimal("2000"))
+    broker.quote["NVDA"]["quote"].update(
+        askPrice=str(Decimal(buy) - Decimal("0.4")),
+        bidPrice=str(Decimal(buy) - Decimal("0.5")),
+    )
+    if accepted:
+        await runtime.trading.buy_breakout("NVDA", qty, Decimal(buy), Decimal(sell))
+        assert len(broker.writes()) == 1
+    else:
+        with pytest.raises(backend.BackendError, match="RISK_LIMIT_EXCEEDED"):
+            await runtime.trading.buy_breakout("NVDA", qty, Decimal(buy), Decimal(sell))
+        assert not broker.writes()
+
+
+async def test_updated_market_buy_limit(setup, monkeypatch):
+    runtime, broker, _ = setup
+    monkeypatch.setattr(backend, "MAX_ORDER_AMOUNT_USD", Decimal("45000"))
+    broker.quote["NVDA"]["quote"]["askPrice"] = "450"
+    await runtime.trading.buy_market("NVDA", 100)
+    broker.quote["NVDA"]["quote"]["askPrice"] = "450.0001"
+    with pytest.raises(backend.BackendError, match="RISK_LIMIT_EXCEEDED"):
+        await runtime.trading.buy_market("NVDA", 100)
     assert len(broker.writes()) == 1
 
 

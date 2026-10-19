@@ -23,10 +23,14 @@ describe('ruler arithmetic and risk checks', () => {
     expect(priceTick({ ...quote, day_high: '.9', day_low: '.89', ask: '.9' })).toBe('0.0001')
   })
   it('checks exact dollar boundaries and leaves large market sells outside buy limits', () => {
-    const ticket = { mode: 'breakout' as const, symbol: 'NVDA', qty: 100, buy_stop: '200', sell_stop: '195' }
+    const ticket = { mode: 'breakout' as const, symbol: 'NVDA', qty: 100, buy_stop: '450', sell_stop: '430' }
     expect(ticketIssue(ticket, null, null)).toBe(null)
-    expect(ticketIssue({ ...ticket, buy_stop: '200.0001' }, null, null)).toBe('Above the $20,000 buy limit.')
-    expect(ticketIssue({ ...ticket, sell_stop: '194.9999' }, null, null)).toBe('Above the $500 estimated risk limit.')
+    expect(ticketIssue({ ...ticket, buy_stop: '450.0001' }, null, null)).toBe('Above the $45,000 buy limit.')
+    expect(ticketIssue({ ...ticket, sell_stop: '429.9999' }, null, null)).toBe('Above the $2,000 estimated risk limit.')
+    expect(ticketIssue({ ...ticket, qty: 1, sell_stop: '382.5' }, null, null)).toBe(null)
+    expect(ticketIssue({ ...ticket, qty: 1, sell_stop: '382.4999' }, null, null)).toBe('Stop distance exceeds 15%.')
+    expect(ticketIssue({ mode: 'market', side: 'buy', symbol: 'NVDA', qty: 100 }, { ...quote, ask: '450' }, null)).toBe(null)
+    expect(ticketIssue({ mode: 'market', side: 'buy', symbol: 'NVDA', qty: 100 }, { ...quote, ask: '450.0001' }, null)).toBe('Above the $45,000 buy limit.')
     expect(ticketIssue({ mode: 'market', side: 'sell', symbol: 'MU', qty: 100 }, null, 100)).toBe(null)
     expect(ticketIssue({ mode: 'market', side: 'sell', symbol: 'MU', qty: 101 }, null, 100)).toBe('Quantity exceeds the current long position.')
   })

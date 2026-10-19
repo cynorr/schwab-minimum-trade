@@ -24,9 +24,9 @@ python3 -m venv .venv
 - `CLIENT_ID`：填写 Schwab Production App 的 App Key。
 - `CALLBACK_URL`：Developer Portal 注册的 HTTPS Callback，默认 `https://127.0.0.1`。
 - `ACCOUNT_HASH`：单账户留空；多个账户时填固定目标 hash。
-- `MAX_ORDER_AMOUNT_USD = Decimal("20000")`：仅限制单笔买入金额。
-- `MAX_LOSS_PER_TRADE_USD = Decimal("500")`：突破单估算价差风险上限。
-- `MAX_STOP_LOSS_RATIO = Decimal("0.10")`，`BREAKOUT_OFFSET = Decimal("0.01")`。
+- `MAX_ORDER_AMOUNT_USD = Decimal("45000")`：仅限制单笔买入金额。
+- `MAX_LOSS_PER_TRADE_USD = Decimal("2000")`：突破单估算价差风险上限。
+- `MAX_STOP_LOSS_RATIO = Decimal("0.15")`，`BREAKOUT_OFFSET = Decimal("0.01")`。
 - `ALLOWED_ORIGINS`：默认允许 `http://127.0.0.1:3000` 和 `http://127.0.0.1:5678`。
 
 修改常量后重启服务。Secret 和 Token 由授权流程存入 Keychain。
@@ -79,7 +79,7 @@ Positions 新增 `open_profit_loss`，直接映射 `longOpenProfitLoss`。Holdin
 
 Orders 的每个订单（包括 OTO 子单）新增 `executions` 数组，无成交时为 `[]`。每笔包含 `activity_id`、`leg_id`、`quantity`、`price`、`time`；数量与价格为十进制字符串，时间为 UTC ISO 8601。`GET /orders`、`GET /orders/{id}` 和 SSE `snapshot_updated.orders` 共用此结构，仍为 12 个业务接口。
 
-Sold Today 只使用现有最近 59 天创建的订单快照，不新增 `/closed-trades`、transactions 查询或后台任务。前端筛选完全成交的股票 SELL 订单，按最后一笔成交时间判断美东当天，按股票汇总卖出数量、加权均价、成交总额（未扣费用）和最后成交时间；展开可追溯原订单及成交活动。卖出部分持仓、当天买回均保留卖出记录；重新加载或重启后从快照恢复，不依赖成交提示事件。不计算已实现盈亏，不处理跨日分批成交和部分成交后撤单，止损单创建/更新须在查询窗口内。
+Sold Today 只使用现有最近 59 天创建的订单快照，不新增 `/closed-trades`、transactions 查询或后台任务。前端筛选完全成交的股票 SELL 订单，按最后一笔成交时间判断美东当天，按股票单行平铺当日 Buy / Sold 数量与实际成交加权均价，以及卖出总额（未扣费用）。买入数据仅代表同一美东交易日完全成交的 BUY 订单，没有记录时显示 —，不作为已匹配的持仓成本。价格显示两位小数、总额取整；不展示内部编号或最后成交时间。卖出部分持仓、当天买回均保留卖出记录；重新加载或重启后从快照恢复，不依赖成交提示事件。不计算已实现盈亏，不处理跨日分批成交和部分成交后撤单，止损单创建/更新须在查询窗口内。
 
 新建订单返回 HTTP 201，修改返回 200，取消返回 202。`accepted` 表示 Schwab 接受请求，不代表成交。三个写入成功响应统一为 `verified: false`；改单从 Location 提取新 ID 后立即返回，账户和订单由后台轮询及 Streaming 触发刷新。
 
@@ -110,7 +110,7 @@ npm run dev
 - 按 `/` 清空并聚焦搜索；输入股票代码后按 Enter 查询；刷新按钮强制刷新行情；点击持仓会带入代码和整股数量。同一标的刷新不会覆盖已编辑的触发价，可点击「重置建议价」恢复。
 - 突破买入、市价买入和市价卖出均先核对，再点击 `Confirm & Send` 发送；成功表示请求已接受，等待券商同步。改止损和撤单直接发送。
 - 标尺刻度固定、滑块移动，可点击或拖动；所有买单/止损直接展开，保留未激活状态。
-- 下方列表分为 Entries、Holdings、Sold Today；成交明细点击展开，时间显示 ET。
+- 下方列表分为 Entries、Holdings、Sold Today，所有字段保持单行；Sold Today 分列显示当日买卖数量与均价，不显示内部编号和时间。
 - 页面通过四种命名 SSE 事件同步快照、报价、连接和成交提示，并每 5 秒读取健康状态以识别授权失效和恢复。SSE 自动重连，保留最后快照；前端不播放声音。
 - 写请求超时、断线或返回 `ORDER_RESULT_UNKNOWN` 时常驻显示琥珀色提示，不自动重发。请先在 Schwab 人工核对；「刷新订单」只读取订单，不代表原交易结果已确认。
 - 页面采用固定交易区和下方统一列表，长列表在卡片内滚动，适配半屏及窄窗口。右上角可切换浅色/深色模式，仅保存主题偏好，不保存账户或订单数据。

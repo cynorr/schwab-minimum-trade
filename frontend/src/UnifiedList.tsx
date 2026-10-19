@@ -1,14 +1,10 @@
 import { useEffect, useState } from 'react'
 import { ApiError, type Decimal, type OrderItem } from './api'
 import { Icon } from './Icons'
-import { money, number, price, quantity, validPrice, wholeMoney, percent } from './format'
+import { number, price, quantity, validPrice, wholeMoney, roundedMoney, percent } from './format'
 import { canReplaceStop } from './orders'
 import { portfolioSections, type SymbolRow, type SoldSymbol } from './portfolio'
 import type { Position } from './api'
-
-function executionTime(value: string) {
-  return new Date(value).toLocaleTimeString('en-GB', { timeZone: 'America/New_York', hour12: false })
-}
 
 function orderKey(order: OrderItem, index: number) { return order.order_id ?? `pending-${index}` }
 function orderLabel(order: OrderItem) {
@@ -50,17 +46,17 @@ function HoldingRow({ row, selected, disabled, busy, onSelect, onWrite, onError 
   const openPercent = open !== null && cost !== null && cost > 0 ? open / cost * 100 : null
   const tone = (value: number | null) => value === null || Math.abs(value) < 0.005 ? '' : value > 0 ? 'positive' : 'negative'
   const uncovered = !held || row.stops.some(order => Number(order.quantity) > Number(held.quantity))
-  return <div className={`portfolio-row holding-row ${selected ? 'selected' : ''}`} data-symbol={row.symbol}>
-    <button className="symbol-button" disabled={disabled} onClick={() => onSelect(row)} aria-label={`Select ${row.symbol}`}>{row.symbol}</button>
-    <span className="align-right">{held ? quantity(held.quantity) : '0'}{uncovered && <span className="coverage-warning" title="Check order coverage">!</span>}</span>
-    <span className="align-right">{money(held?.average_price)}</span>
-    <span className="align-right market-value">{money(held?.market_value)}</span>
-    <div className="holding-profit">
-      <span className={tone(open)} title="Open P/L: longOpenProfitLoss. Percent = Open P/L / (averagePrice × quantity).">{money(open, true)} <small>{percent(openPercent)}</small></span>
-      <span className={tone(number(held?.day_profit_loss))} title="Day P/L: currentDayProfitLoss / currentDayProfitLossPercentage."><small>Day </small>{money(held?.day_profit_loss, true)} <small>{percent(held?.day_profit_loss_percent)}</small></span>
-    </div>
-    <div className="row-orders">{targets.length ? targets.map((order, index) => <OrderControl key={orderKey(order, index)} order={order} symbol={row.symbol} disabled={disabled} busy={busy} onWrite={onWrite} onError={onError} />) : <span className="no-stop">No stop</span>}</div>
-  </div>
+  return <tr className={`portfolio-row holding-row ${selected ? 'selected' : ''}`} data-symbol={row.symbol}>
+    <td><button className="symbol-button" disabled={disabled} onClick={() => onSelect(row)} aria-label={`Select ${row.symbol}`}>{row.symbol}</button></td>
+    <td>{held ? quantity(held.quantity) : '0'}{uncovered && <span className="coverage-warning" title="Check order coverage">!</span>}</td>
+    <td>{price(held?.average_price, 2)}</td>
+    <td className="market-value">{wholeMoney(held?.market_value)}</td>
+    <td className={tone(open)} title="Open P/L: longOpenProfitLoss.">{roundedMoney(open, true)}</td>
+    <td className={tone(openPercent)} title="Open P/L / (average price × quantity).">{percent(openPercent)}</td>
+    <td className={tone(number(held?.day_profit_loss))} title="Day P/L: currentDayProfitLoss.">{roundedMoney(held?.day_profit_loss, true)}</td>
+    <td className={tone(number(held?.day_profit_loss_percent))} title="Day P/L: currentDayProfitLossPercentage.">{percent(held?.day_profit_loss_percent)}</td>
+    <td><div className="row-orders">{targets.length ? targets.map((order, index) => <OrderControl key={orderKey(order, index)} order={order} symbol={row.symbol} disabled={disabled} busy={busy} onWrite={onWrite} onError={onError} />) : <span className="no-stop">No stop</span>}</div></td>
+  </tr>
 }
 
 interface RowProps {
@@ -74,10 +70,10 @@ interface RowProps {
 }
 
 function EntryRow({ row, selected, disabled, busy, onSelect, onWrite, onError }: RowProps) {
-  return <div className={`portfolio-row entry-row ${selected ? 'selected' : ''}`}>
-    <button className="symbol-button" disabled={disabled} onClick={() => onSelect(row)} aria-label={`Select ${row.symbol}`}>{row.symbol}</button>
-    <div className="entry-orders">{[...row.entries, ...row.stops, ...row.other].map((order, index) => <OrderControl key={orderKey(order, index)} order={order} symbol={row.symbol} disabled={disabled} busy={busy} onWrite={onWrite} onError={onError} />)}</div>
-  </div>
+  return <tr className={`portfolio-row entry-row ${selected ? 'selected' : ''}`}>
+    <td><button className="symbol-button" disabled={disabled} onClick={() => onSelect(row)} aria-label={`Select ${row.symbol}`}>{row.symbol}</button></td>
+    <td><div className="entry-orders">{[...row.entries, ...row.stops, ...row.other].map((order, index) => <OrderControl key={orderKey(order, index)} order={order} symbol={row.symbol} disabled={disabled} busy={busy} onWrite={onWrite} onError={onError} />)}</div></td>
+  </tr>
 }
 
 export function UnifiedList({ positions, orders, sold, longValue, symbol, locked, selectionLocked, busy, loading, onSelect, onWrite, onError, onRefresh, refreshing }: {
@@ -92,24 +88,24 @@ export function UnifiedList({ positions, orders, sold, longValue, symbol, locked
   return <section className="portfolio-panel" aria-label="Unified portfolio">
     <div className="portfolio-scroll">
       <section aria-label="Entries"><div className="list-section-heading"><span>Entries <b>{sections.entries.length}</b></span><button className={`icon-button ${refreshing ? 'is-loading' : ''}`} aria-label="Refresh orders" title="Refresh orders" disabled={refreshing || busy !== null} onClick={onRefresh}><Icon name="refresh" size={14} /></button></div>
-        {sections.entries.map(row => <EntryRow key={row.symbol} row={row} selected={symbol === row.symbol} disabled={locked || selectionLocked} {...common} />)}
+        {sections.entries.length > 0 && <div className="list-table-scroll"><table className="portfolio-table entries-table" aria-label="Entry orders"><tbody>{sections.entries.map(row => <EntryRow key={row.symbol} row={row} selected={symbol === row.symbol} disabled={locked || selectionLocked} {...common} />)}</tbody></table></div>}
         {loading && sections.entries.length === 0 && <div className="empty-row">Loading…</div>}
       </section>
       <section aria-label="Holdings"><div className="list-section-heading"><span>Holdings <b>{sections.holdings.filter(row => row.position).length}</b></span><span>{sections.holdings.some(row => !row.position) ? `${sections.holdings.filter(row => !row.position).length} uncovered` : ''}</span></div>
-        {sections.holdings.length > 0 && <div className="holding-columns" aria-hidden="true"><span>Symbol</span><span>Qty</span><span>Avg</span><span className="market-value">Value</span><span>Open / Day P/L</span><span>Orders</span></div>}
-        {sections.holdings.map(row => <HoldingRow key={row.symbol} row={row} selected={symbol === row.symbol} disabled={locked || selectionLocked} {...common} />)}
+        <div className="list-table-scroll"><table className="portfolio-table holdings-table" aria-label="Holdings and orders">
+          {sections.holdings.length > 0 && <thead><tr><th>Symbol</th><th>Qty</th><th>Avg</th><th>Value</th><th>Open P/L</th><th>Open %</th><th>Day P/L</th><th>Day %</th><th>Orders</th></tr></thead>}
+          <tbody>{sections.holdings.map(row => <HoldingRow key={row.symbol} row={row} selected={symbol === row.symbol} disabled={locked || selectionLocked} {...common} />)}</tbody>
+          <tfoot><tr className="holdings-total" aria-label="Holdings total" title="currentBalances.longMarketValue"><td colSpan={3}>Long Value</td><td className="market-value"><strong>{wholeMoney(longValue)}</strong></td><td colSpan={5} /></tr></tfoot>
+        </table></div>
         {loading && sections.holdings.length === 0 && <div className="empty-row">Loading…</div>}
-        <div className="holdings-total" aria-label="Holdings total" title="currentBalances.longMarketValue"><span>Long Value</span><strong className="market-value">{wholeMoney(longValue)}</strong></div>
       </section>
-      <section aria-label="Sold Today"><div className="list-section-heading"><span>Sold Today <b>{sold.length}</b></span><span>ET · Gross proceeds</span></div>
-        {sold.length > 0 && <div className="sold-columns" aria-hidden="true"><span>Symbol</span><span>Sold</span><span>Avg</span><span>Amount</span><span>Last (ET)</span></div>}
-        {sold.map(row => <details className="sold-item" key={row.symbol}>
-          <summary className="portfolio-row sold-row" aria-label={`${row.symbol} sell executions`}><span>▸ {row.symbol}</span><span>{quantity(row.quantity)}</span><span>{price(row.averagePrice)}</span><span>{money(row.amount)}</span><span>{executionTime(row.occurredAt)}</span></summary>
-          <div className="sold-details">{row.executions.map((execution, index) => <div className="execution-row" key={index}>
-            <span>{executionTime(execution.time)} ET · {quantity(execution.quantity)} @ {price(execution.price)}</span>
-            <span>Order #{execution.order_id} · Activity #{execution.activity_id} · Leg {execution.leg_id}</span>
-          </div>)}</div>
-        </details>)}
+      <section aria-label="Sold Today"><div className="list-section-heading"><span>Sold Today <b>{sold.length}</b></span></div>
+        {sold.length > 0 && <div className="list-table-scroll"><table className="portfolio-table sold-table" aria-label="Today's buys and sales">
+          <thead><tr><th>Symbol</th><th className="buy-column" title="Shares bought today (ET)">Buy Qty</th><th className="buy-column" title="Weighted average of today's actual buy fills; not a matched cost basis">Buy Avg</th><th className="sold-column">Sold Qty</th><th className="sold-column" title="Weighted average of today's actual sell fills">Sold Avg</th><th title="Gross sale proceeds before fees">Proceeds</th></tr></thead>
+          <tbody>{sold.map(row => <tr className="portfolio-row sold-row" key={row.symbol} aria-label={`${row.symbol} buys and sales`}>
+            <td className="sold-symbol">{row.symbol}</td><td className="buy-column">{quantity(row.boughtQuantity)}</td><td className="buy-column">{price(row.averageBuyPrice, 2)}</td><td className="sold-column">{quantity(row.quantity)}</td><td className="sold-column">{price(row.averagePrice, 2)}</td><td>{roundedMoney(row.amount)}</td>
+          </tr>)}</tbody>
+        </table></div>}
         {!loading && sold.length === 0 && <div className="empty-row">No sales today</div>}
       </section>
     </div>
