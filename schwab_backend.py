@@ -1094,11 +1094,26 @@ class TradingGateway:
             quantity = positive(
                 leg.get("quantity") if leg.get("quantity") is not None else raw.get("quantity")
             )
-            if quantity is None or quantity != quantity.to_integral_value():
-                raise conflict("原订单数量必须是有限正整数，不能截断或推测改单数量")
+            if (
+                quantity is None
+                or quantity != quantity.to_integral_value()
+                or leg.get("quantityType") not in (None, "", "SHARES")
+            ):
+                raise conflict("原订单数量必须是有限正整数股数，不能截断或推测改单数量")
             duration = raw.get("duration")
             if not duration:
                 raise conflict("原订单缺少有效期，无法保持原单设置")
+            if (
+                raw.get("stopType") not in (None, "", "STANDARD")
+                or raw.get("stopPriceLinkBasis") not in (None, "", "MANUAL")
+                or raw.get("stopPriceLinkType") not in (None, "", "VALUE")
+                or any(
+                    decimal_value(raw[key]) != 0
+                    for key in ("stopPriceOffset", "activationPrice")
+                    if raw.get(key) not in (None, "")
+                )
+            ):
+                raise conflict("仅支持固定价格、标准触发的股票 Sell Stop，不能自动更改原触发设置")
             payload = order_payload(
                 leg["instrument"]["symbol"],
                 int(quantity),
@@ -1107,29 +1122,10 @@ class TradingGateway:
                 duration=duration,
                 stop=new_stop,
             )
-            # A replacement changes only the stop; retain existing execution/tax settings.
-            for key in (
-                "complexOrderStrategyType",
-                "requestedDestination",
-                "stopPriceLinkBasis",
-                "stopPriceLinkType",
-                "stopType",
-                "taxLotMethod",
-                "specialInstruction",
-            ):
+            # Preserve explicit tax/execution instructions, including FIFO, without GET metadata.
+            for key in ("taxLotMethod", "specialInstruction"):
                 if raw.get(key) not in (None, ""):
                     payload[key] = raw[key]
-            # These optional broker fields are JSON numbers (OpenAPI double).
-            for key in ("stopPriceOffset", "activationPrice"):
-                if raw.get(key) is not None:
-                    payload[key] = float(raw[key])
-            payload["orderLegCollection"][0].update(
-                {
-                    key: value
-                    for key, value in leg.items()
-                    if key not in {"instrument", "legId", "orderLegType", "quantity"}
-                }
-            )
             response = await self.runtime.rest.request(
                 "PUT", self.runtime.rest.account_path(f"/orders/{order_id}"), payload=payload
             )

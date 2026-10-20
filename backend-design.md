@@ -935,7 +935,7 @@ Child
 
 数量优先读取订单腿部，缺失时回退至顶层。确认是有限正整数后转为整数，仅放入请求腿部的 `quantity`；非整股数量不截断。缺少数量或原有效期时返回明确的 `ORDER_CONFLICT`，不猜测参数。
 
-普通 STOP 不回填 GET 中的 `price`、`priceLinkBasis`、`priceLinkType`。原有非空税批次、特殊指令和触发设置继续保留；已有数值型触发参数按 JSON number 提交。
+普通 STOP 仅用 session、duration、orderType、orderStrategyType、stopPrice、orderLegCollection 重建请求，不回填或校验路由、复合策略和 positionEffect 等状态字段；价格保持精确十进制字符串。显式税批次（包括 FIFO）和非空特殊指令继续保留。数量必须以股数计；仅支持固定价格、标准触发的 STOP，自定义触发依据、联动或激活条件返回 ORDER_CONFLICT，避免改价时重置触发方式。替换请求使用默认路由，不保留手动指定的执行路由。
 
 不手动执行 Cancel + Place。
 

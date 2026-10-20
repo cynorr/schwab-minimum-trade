@@ -405,12 +405,15 @@ async def test_options_rejected(setup):
     assert not broker.writes()
 
 
-async def test_replace_single_put_preserves_original_fields(api):
+async def test_replace_minimal_payload_preserves_tax_settings_and_original_order(api):
     client, _, broker = api
     broker.order_list[0].update(
         taxLotMethod="LIFO",
         specialInstruction="DO_NOT_REDUCE",
-        stopType="BID",
+        stopType="STANDARD",
+        complexOrderStrategyType="NONE",
+        requestedDestination="AUTO",
+        destinationLinkName="SOHO",
         price=0.0,
         stopPriceOffset=0.0,
         activationPrice=0.0,
@@ -429,14 +432,23 @@ async def test_replace_single_put_preserves_original_fields(api):
     payload = json.loads(writes[0].content)
     assert payload["stopPrice"] == "92.00" and payload["duration"] == "GOOD_TILL_CANCEL"
     assert "status" not in payload and "orderId" not in payload and "editable" not in payload
-    assert payload["orderLegCollection"][0]["positionEffect"] == "CLOSING"
-    assert "legId" not in payload["orderLegCollection"][0]
+    assert payload["orderLegCollection"][0] == {
+        "instruction": "SELL",
+        "quantity": 10,
+        "instrument": {"symbol": "NVDA", "assetType": "EQUITY"},
+    }
     assert payload["taxLotMethod"] == "LIFO"
     assert payload["specialInstruction"] == "DO_NOT_REDUCE"
-    assert payload["stopType"] == "BID"
-    assert "price" not in payload
-    assert payload["stopPriceOffset"] == 0.0 and isinstance(payload["stopPriceOffset"], float)
-    assert payload["activationPrice"] == 0.0 and isinstance(payload["activationPrice"], float)
+    assert set(payload) == {
+        "session",
+        "duration",
+        "orderType",
+        "orderStrategyType",
+        "stopPrice",
+        "orderLegCollection",
+        "taxLotMethod",
+        "specialInstruction",
+    }
     assert broker.order_list[0] == original
 
 
@@ -1413,3 +1425,87 @@ async def test_native_open_profit_and_quote_reference_fields(api):
     quote_requests = [r for r in broker.requests if r.url.path == "/marketdata/v1/quotes"]
     assert len(quote_requests) == 1
     assert quote_requests[0].url.params["fields"] == "quote"
+
+
+@pytest.mark.parametrize("destination", [None, "", "AUTO", "BEST", "SMART", "INET"])
+async def test_replacement_omits_route_echo_and_broker_execution_venue(setup, destination):
+    runtime, broker, _ = setup
+    broker.order_list[0].update(requestedDestination=destination, destinationLinkName="SOHO")
+    await runtime.trading.replace_stop(123, Decimal("4.95"))
+    payload = json.loads(broker.writes()[0].content)
+    assert "requestedDestination" not in payload
+    assert "destinationLinkName" not in payload
+    assert payload["stopPrice"] == "4.95"
+    assert len(broker.writes()) == 1
+
+
+async def test_cmct_response_defaults_produce_only_core_equity_stop_fields(setup):
+    runtime, broker, _ = setup
+    raw = broker.order_list[0]
+    raw.update(
+        quantity=3000.0,
+        stopPrice="4.56",
+        complexOrderStrategyType="NONE",
+        requestedDestination="AUTO",
+        destinationLinkName="SOHO",
+        stopType="STANDARD",
+    )
+    raw["orderLegCollection"][0].update(quantity=3000.0)
+    raw["orderLegCollection"][0]["instrument"].update(symbol="CMCT", cusip="12564W219")
+    original = copy.deepcopy(raw)
+    await runtime.trading.replace_stop(123, Decimal("4.95"))
+    assert len(broker.writes()) == 1
+    assert json.loads(broker.writes()[0].content) == {
+        "session": "NORMAL",
+        "duration": "GOOD_TILL_CANCEL",
+        "orderType": "STOP",
+        "orderStrategyType": "SINGLE",
+        "stopPrice": "4.95",
+        "orderLegCollection": [
+            {
+                "instruction": "SELL",
+                "quantity": 3000,
+                "instrument": {"symbol": "CMCT", "assetType": "EQUITY"},
+            }
+        ],
+    }
+    assert raw == original
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"stopType": "BID"},
+        {"stopType": "MARK"},
+        {"stopPriceLinkBasis": "BID"},
+        {"stopPriceLinkType": "PERCENT"},
+        {"stopPriceOffset": "1.25"},
+        {"activationPrice": "80"},
+    ],
+)
+async def test_replacement_refuses_to_reset_original_trigger_settings(api, settings):
+    client, _, broker = api
+    broker.order_list[0].update(settings)
+    original = copy.deepcopy(broker.order_list[0])
+    response = await client.put("/api/v1/orders/123/stop", json={"new_stop": "4.95"})
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "ORDER_CONFLICT"
+    assert "不能自动更改原触发设置" in response.json()["error"]["message"]
+    assert not broker.writes()
+    assert broker.order_list[0] == original
+
+
+async def test_replacement_does_not_interpret_dollar_quantity_as_shares(setup):
+    runtime, broker, _ = setup
+    broker.order_list[0]["orderLegCollection"][0]["quantityType"] = "DOLLARS"
+    with pytest.raises(backend.BackendError, match="ORDER_CONFLICT"):
+        await runtime.trading.replace_stop(123, Decimal("4.95"))
+    assert not broker.writes()
+
+
+@pytest.mark.parametrize("method", ["FIFO", "LIFO"])
+async def test_minimal_replacement_keeps_explicit_tax_lot_selection(setup, method):
+    runtime, broker, _ = setup
+    broker.order_list[0].update(taxLotMethod=method)
+    await runtime.trading.replace_stop(123, Decimal("4.95"))
+    assert json.loads(broker.writes()[0].content)["taxLotMethod"] == method
